@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Optional
 
 import typer
-import yaml
 
 app = typer.Typer(
     name="gsop",
@@ -35,16 +34,10 @@ class EarthSource(str, Enum):
 
 
 def _default_runs() -> int:
-    """Default Monte Carlo runs: read from config/run.yaml.
+    """Default Monte Carlo runs: ``runs`` in config/run.yaml (decision D2: 2000)."""
+    from gsop.config import load_config
 
-    Placeholder until the config loader (A06) exists; it is switched to the
-    loader then. 2000 is decision D2.
-    """
-    path = Path(__file__).resolve().parents[2] / "config" / "run.yaml"
-    try:
-        return int(yaml.safe_load(path.read_text(encoding="utf-8"))["runs"])
-    except (OSError, KeyError, TypeError, ValueError):
-        return 2000
+    return load_config().run.runs
 
 
 def _stub(name: str) -> None:

@@ -389,3 +389,52 @@ def test_pre_registered_pass_criteria():
         "negative_control_rank_percentile_below": 25,
         "gate_tests": "all_rejected",
     }
+
+
+# --- A14: run.yaml ----------------------------------------------------------
+def test_run_values_match_setup_prompt():
+    sink = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        run = C._parse_run(read("run"), C._Warn(sink))
+    assert sink == []
+    assert run.runs == 2000
+    assert run.seed == 20261114
+    assert run.top_fractions == (0.01, 0.05, 0.10)
+    assert (run.robust_top_fraction, run.robust_min_run_share) == (0.05, 0.9)
+    assert run.candidate_fraction == 0.03
+    assert run.chunk_ram_fraction == 0.4
+    assert run.site_match_radius_km == 20
+    assert run.novelty_radius_km == 100
+    assert run.convergence_checkpoints == (500, 1000, 1500, 2000)
+    assert run.golden_score_tolerance == 1e-4
+    assert run.golden_top1_jaccard_min == 0.99
+    assert run.operator_check_tolerance == 0.10
+
+
+def test_site_radius_is_not_duplicated_between_files():
+    assert read("run")["site_match_radius_km"] == read("known_sites")["site_match_radius_km"]
+
+
+def test_changing_runs_changes_the_default_of_simulate(tmp_path, monkeypatch):
+    import shutil
+
+    from gsop import cli, config
+
+    shutil.copytree(CONFIG_DIR, tmp_path / "config")
+    monkeypatch.setattr(config, "DEFAULT_CONFIG_DIR", tmp_path / "config")
+    assert cli._default_runs() == 2000
+    path = tmp_path / "config" / "run.yaml"
+    path.write_text(path.read_text(encoding="utf-8").replace("runs: 2000\n", "runs: 123\n", 1), encoding="utf-8")
+    assert cli._default_runs() == 123
+
+
+# --- the whole real config loads together -------------------------------------
+def test_real_config_loads_without_warnings_and_hash_is_stable():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        cfg = C.load_config(CONFIG_DIR)
+    assert cfg.warnings == []
+    assert cfg.config_hash() == C.load_config(CONFIG_DIR).config_hash()
+    assert len(cfg.weights("moon")) == 8 and len(cfg.weights("mars")) == 9
+    assert cfg.known_sites.unconfirmed_count == 15

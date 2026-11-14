@@ -1,0 +1,30 @@
+# Run-time knobs: one place so both machines run the identical experiment.
+#
+# DECISIONS (do not change without Anay):
+#   runs, master_seed          D2: 2,000 Monte Carlo runs, master seed 20261114. Per-run seeds come from
+#                              numpy.random.SeedSequence(master_seed).spawn(runs), so results do not depend
+#                              on worker count. `--runs` overrides `runs` on the command line.
+#   robust                     robust = top 5% in at least 90% of runs (plan, setup prompt section 3).
+# TUNABLE (a change must be written up in docs/DECISIONS.md or SPEC.md):
+#   top_fractions, candidate_fraction, chunk_ram_fraction, site_match_radius_km, novelty_radius_km,
+#   convergence_checkpoints, golden.*, operator_check_tolerance.
+runs: 2000
+master_seed: 20261114
+
+top_fractions: [0.01, 0.05, 0.10]       # per-run top 1%, 5%, 10% membership counts
+robust:
+  top_fraction: 0.05
+  min_run_share: 0.9                    # in the top 5% in at least 90% of runs
+candidate_fraction: 0.03                # pass 2 recomputes exact percentiles for the top 3% of tiles
+
+chunk_ram_fraction: 0.4                 # cell chunks use at most 40% of free RAM (gsop doctor)
+site_match_radius_km: 20                # validation: best tile within this distance of a known site
+novelty_radius_km: 100                  # discovery: candidates must be farther than this from every known site
+convergence_checkpoints: [500, 1000, 1500, 2000]   # top-1% set overlap reported at these run counts
+
+golden:                                 # gsop golden: tolerance comparison, never bit-identical (different BLAS)
+  score_tolerance: 1.0e-4
+  top1_jaccard_min: 0.99
+  tiles: 5000
+  runs: 50
+operator_check_tolerance: 0.10          # gsop check-operators: Earth Engine vs numpy may differ by at most 10%
