@@ -384,3 +384,176 @@ def summarise_candidates(store: Pass2Store, chunk_cols: int = 20_000) -> dict:
         out["mc_p05"][a:b], out["mc_median"][a:b], out["mc_p95"][a:b] = np.percentile(s, [5, 50, 95], axis=0)
         out["rank_pct_p05"][a:b], out["rank_pct_p50"][a:b], out["rank_pct_p95"][a:b] = np.percentile(r, [5, 50, 95], axis=0)
     return out
+
+
+# ===========================================================================================================
+# Outputs: robust flag, results table, convergence (issue C20), and the driver
+# ===========================================================================================================
+import time  # noqa: E402
+from collections.abc import Mapping  # noqa: E402
+
+import pandas as pd  # noqa: E402
+
+DEFAULT_BLOCK_RUNS = 125  # runs per block; fixed (never derived from the worker count) so merged float statistics do not depend on workers
+
+
+@dataclass(frozen=True)
+class MCParams:
+    """Run-level settings, all from ``config/run.yaml`` except ``runs`` which ``--runs`` may override."""
+
+    runs: int
+    fractions: tuple[float, ...]
+    robust_fraction: float
+    robust_min_share: float
+    candidate_fraction: float
+    checkpoints: tuple[int, ...]
+    block_runs: int = DEFAULT_BLOCK_RUNS
+
+    @classmethod
+    def from_config(cls, cfg: Config, runs: Optional[int] = None, block_runs: int = DEFAULT_BLOCK_RUNS) -> "MCParams":
+        r = cfg.run
+        return cls(r.runs if runs is None else int(runs), tuple(r.top_fractions), r.robust_top_fraction, r.robust_min_run_share, r.candidate_fraction,
+                   tuple(r.convergence_checkpoints), block_runs)
+
+    @property
+    def robust_index(self) -> int:
+        try:
+            return list(self.fractions).index(self.robust_fraction)
+        except ValueError:
+            raise ValueError(f"robust top fraction {self.robust_fraction} is not one of top_fractions {list(self.fractions)}") from None
+
+
+def scaled_checkpoints(runs: int, checkpoints) -> list[int]:
+    """Convergence checkpoints for ``runs`` runs: the configured ones when ``runs`` equals the largest (2,000), else scaled in proportion and
+    de-duplicated; always ends with ``runs``."""
+    top = max(checkpoints)
+    cps = sorted({max(1, int(round(c * runs / top))) for c in checkpoints} | {runs})
+    return [c for c in cps if c <= runs]
+
+
+def block_plan(runs: int, block_runs: int, checkpoints: list[int]) -> list[tuple[int, int]]:
+    """Consecutive blocks ``(first, last)`` covering ``0..runs``: split at every multiple of ``block_runs`` and at every checkpoint, so a block never spans
+    two segments. Depends only on ``runs``, ``block_runs`` and the checkpoints (never on the worker count)."""
+    cuts = sorted({0, runs, *range(block_runs, runs, block_runs), *[c for c in checkpoints if 0 < c < runs]})
+    return list(zip(cuts[:-1], cuts[1:]))
+
+
+def segment_starts(checkpoints: list[int]) -> list[int]:
+    """Run indices that start segments 1, 2, ...: the checkpoints except the last (which is the end of the run)."""
+    return list(checkpoints[:-1])
+
+
+def merge_pass1(blocks: "list[Pass1Block]", n_tiles: int, n_segments: int, n_fractions: int) -> tuple[OnlineStats, list[np.ndarray]]:
+    """Merge blocks in run order: statistics (fixed merge order) and the per-segment counters."""
+    stats = OnlineStats(n_tiles)
+    seg = [np.zeros((n_tiles, n_fractions), dtype=np.uint16) for _ in range(n_segments)]
+    for b in sorted(blocks, key=lambda b: b.first_run):
+        stats.merge(b.stats)
+        for k, c in b.counters.items():
+            seg[k] += c
+    return stats, seg
+
+
+def jaccard(a: np.ndarray, b: np.ndarray) -> float:
+    sa, sb = set(a.tolist()), set(b.tolist())
+    return len(sa & sb) / len(sa | sb) if (sa or sb) else 1.0
+
+
+def top1_set(counts: np.ndarray, n: int, fractions) -> np.ndarray:
+    """The top-1% set by membership: tiles ranked by count of the top-1% set, then of the 5% and 10% sets, then lower index."""
+    k = top_k_sizes(n, fractions)[0]
+    order = np.lexsort((np.arange(n), -counts[:, 2].astype(np.int64), -counts[:, 1].astype(np.int64), -counts[:, 0].astype(np.int64)))
+    return order[:k]
+
+
+def convergence_report(seg_counters: list[np.ndarray], checkpoints: list[int], fractions) -> dict:
+    """Top-1% set overlap (Jaccard) between the set after each checkpoint (cumulative counts of the first ``c`` runs) and the final set."""
+    n = seg_counters[0].shape[0]
+    cumulative = np.zeros_like(seg_counters[0], dtype=np.int64)
+    sets = []
+    for j in range(len(checkpoints)):
+        cumulative += seg_counters[j] if j < len(seg_counters) else 0
+        sets.append(top1_set(cumulative, n, fractions))
+    final = sets[-1]
+    return {"definition": "top 1% of tiles by membership count of the top-1% set (then 5%, 10%, then lower index)",
+            "final_runs": checkpoints[-1], "checkpoints": [{"runs": c, "jaccard_top1_vs_final": jaccard(s, final)} for c, s in zip(checkpoints, sets)]}
+
+
+def build_results_table(tile_ids: np.ndarray, stats: OnlineStats, counts: np.ndarray, cand_idx: np.ndarray, pass2: Optional[Mapping[str, np.ndarray]],
+                        params: MCParams) -> pd.DataFrame:
+    """One row per tile that ever reached the top 10% or is a candidate. ``freq_topK`` = share of runs in the top K%; ``robust`` = ``freq`` of the
+    robust fraction (5%) at least ``robust_min_share`` (90%). Pass 2 columns are NaN for non-candidates."""
+    n = len(tile_ids)
+    freq = counts.astype(np.float32) / np.float32(params.runs)
+    is_cand = np.zeros(n, dtype=bool)
+    is_cand[cand_idx] = True
+    keep = np.flatnonzero((counts[:, -1] > 0) | is_cand)
+    cols = {"tile_id": tile_ids[keep], "mc_mean": stats.mean[keep].astype(np.float32), "mc_std": np.sqrt(stats.variance[keep]).astype(np.float32)}
+    for j, f in enumerate(params.fractions):
+        cols[f"freq_top{int(round(f * 100))}"] = freq[keep, j]
+    cols["robust"] = freq[keep, params.robust_index] >= params.robust_min_share
+    cols["is_candidate"] = is_cand[keep]
+    pos = np.full(n, -1, dtype=np.int64)
+    pos[cand_idx] = np.arange(len(cand_idx))
+    for name in ("mc_median", "mc_p05", "mc_p95", "rank_pct_p05", "rank_pct_p50", "rank_pct_p95"):
+        col = np.full(len(keep), np.nan, dtype=np.float32)
+        if pass2 is not None:
+            m = pos[keep] >= 0
+            col[m] = pass2[name][pos[keep][m]]
+        cols[name] = col
+    return pd.DataFrame(cols)
+
+
+@dataclass
+class MCResult:
+    table: pd.DataFrame
+    convergence: dict
+    timing: dict
+    candidates: int
+
+
+def compute_pass1_block(task, shared):
+    """Worker entry point (module level so it works under spawn): ``task = (mcs, first, last, fractions, segment_edges, chunk_rows)``."""
+    mcs, first, last, fractions, edges, chunk_rows = task
+    return run_block(shared["x"], mcs, first, last, fractions, edges, chunk_rows)
+
+
+def simulate(x: np.ndarray, tile_ids: np.ndarray, mcs: MCSetup, params: MCParams, work_dir: Optional[Path] = None, chunk_rows: int = _S.DEFAULT_CHUNK_ROWS,
+             log=print) -> MCResult:
+    """The whole Monte Carlo for one target and profile (serial driver: pass 1, candidate selection, pass 2, results, convergence)."""
+    n = x.shape[0]
+    cps = scaled_checkpoints(params.runs, params.checkpoints)
+    edges = segment_starts(cps)
+    plan = block_plan(params.runs, params.block_runs, cps)
+    t0 = time.perf_counter()
+    blocks = [compute_pass1_block((mcs, a, b, params.fractions, edges, chunk_rows), {"x": x}) for a, b in plan]
+    stats, seg = merge_pass1(blocks, n, len(cps), len(params.fractions))
+    counts = sum(seg[1:], seg[0]) if len(seg) > 1 else seg[0]
+    t1 = time.perf_counter()
+    cand = select_candidates(stats.mean, counts[:, params.robust_index], params.candidate_fraction)
+    import tempfile
+
+    with tempfile.TemporaryDirectory() if work_dir is None else _NullContext(work_dir) as d:
+        store = Pass2Store(Path(d), params.runs, len(cand))
+        for a, b in plan:
+            pass2_block(x, mcs, cand, a, b, store, chunk_rows)
+        summary = summarise_candidates(store)
+    t2 = time.perf_counter()
+    table = build_results_table(tile_ids, stats, counts.astype(np.uint16), cand, summary, params)
+    conv = convergence_report(seg, cps, params.fractions)
+    log(f"[mc] {mcs.target}/{mcs.profile}: {params.runs} runs on {n:,} tiles; pass 1 {t1 - t0:.1f} s, pass 2 {t2 - t1:.1f} s, {len(cand):,} candidates, "
+        f"{int(table.robust.sum()):,} robust")
+    return MCResult(table, conv, {"pass1_seconds": round(t1 - t0, 3), "pass2_seconds": round(t2 - t1, 3), "runs": params.runs, "tiles": n}, len(cand))
+
+
+class _NullContext:
+    """``with`` wrapper around an existing directory (not deleted on exit)."""
+
+    def __init__(self, path) -> None:
+        self.path = str(path)
+
+    def __enter__(self) -> str:
+        return self.path
+
+    def __exit__(self, *exc) -> None:
+        return None

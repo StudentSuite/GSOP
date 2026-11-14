@@ -36,3 +36,19 @@ Every output row that belongs to a target (scores, Monte Carlo results, discover
 | `scores_summary.json` | run time and peak memory per target |
 
 Profiles: Moon `base`, `landing_mobility`, `power_night`, `ice_resources`; Mars the same plus `geology_life`. The layout is wide (one row per target and tile with one score column per profile) because the family similarities do not depend on the profile.
+
+## Monte Carlo (stage s5), `results/<body>/`
+
+`mc_<target>_<profile>.parquet`: one row per tile that reached the top 10% in at least one run or is a candidate. A tile not listed never reached the top 10% in any run.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `tile_id` | int64 | tile |
+| `mc_mean`, `mc_std` | float32 | mean and standard deviation of the score over the runs |
+| `freq_top1`, `freq_top5`, `freq_top10` | float32 | share of runs in which the tile was in the top 1%, 5%, 10% of gated tiles |
+| `robust` | bool | `freq_top5 >= 0.9` (in the top 5% in at least 90% of the runs; thresholds in `config/run.yaml`) |
+| `is_candidate` | bool | one of the top 3% by mean score or by `freq_top5`; only candidates have the next six columns (NaN otherwise) |
+| `mc_median`, `mc_p05`, `mc_p95` | float32 | exact percentiles of the score over the runs |
+| `rank_pct_p05`, `rank_pct_p50`, `rank_pct_p95` | float32 | rank percentile among all gated tiles of the run (100 x share of tiles with a strictly lower score), 5th, 50th, 95th percentile over the runs |
+
+`convergence.json`: for every target and profile, the Jaccard overlap between the top-1% set after the first 500, 1,000, 1,500 and 2,000 runs (scaled for other run counts) and the final set.
