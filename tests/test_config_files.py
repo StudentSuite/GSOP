@@ -335,3 +335,57 @@ def test_ledger_header_states_the_fidelity_formula():
     text = (CONFIG_DIR / "ledger.yaml").read_text(encoding="utf-8")
     assert "fidelity = 100 * mean(status_value over the ledger rows relevant to that purpose)" in text
     assert "Broken 0, Partly 0.5, Matchable 1" in text
+
+
+# --- A13: known_sites.yaml --------------------------------------------------
+def _parse_sites():
+    sink = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        out = C._parse_known_sites(read("known_sites"), C._Warn(sink))
+    assert sink == []
+    return out
+
+
+def test_site_lists_and_nothing_is_confirmed():
+    ks = _parse_sites()
+    assert list(ks.primary) == [
+        "lonar", "haughton", "mcmurdo_dry_valleys", "atacama_salars", "ladakh_puga", "mdrs_utah",
+    ]
+    assert list(ks.secondary) == ["sf_volcanic_field", "gosses_bluff", "mauna_kea", "askja"]
+    assert list(ks.gate_tests) == ["manicouagan", "tatacoa", "samoylov"]
+    assert list(ks.negative_controls) == ["amazon_basin", "congo_basin"]
+    assert ks.unconfirmed_count == 15
+    assert not any(s.confirmed for s in ks.all_sites.values()), "confirming is a later human step (D01)"
+
+
+def test_site_coordinates_match_setup_prompt():
+    ks = _parse_sites()
+    expected = {
+        "lonar": (19.98, 76.51), "haughton": (75.37, -89.68), "mcmurdo_dry_valleys": (-77.5, 162.0),
+        "atacama_salars": (-23.5, -68.25), "ladakh_puga": (33.22, 78.32), "mdrs_utah": (38.41, -110.79),
+        "sf_volcanic_field": (35.35, -111.5), "gosses_bluff": (-23.8, 132.3), "mauna_kea": (19.82, -155.47),
+        "askja": (65.03, -16.75), "manicouagan": (51.1, -68.7), "tatacoa": (3.23, -75.17),
+        "samoylov": (72.37, 126.48), "amazon_basin": (-3.0, -60.0), "congo_basin": (-0.5, 23.0),
+    }
+    got = {n: (s.lat, s.lon) for n, s in ks.all_sites.items()}
+    assert got == expected
+
+
+def test_bodies_radius_and_expectations():
+    ks = _parse_sites()
+    assert ks.primary["lonar"].bodies == ("mars", "moon")
+    assert ks.primary["mcmurdo_dry_valleys"].bodies == ("mars",)
+    assert ks.secondary["sf_volcanic_field"].radius_km == 30
+    assert ks.secondary["mauna_kea"].bodies == ("moon",)
+    assert all(s.expect == "rejected" for s in ks.gate_tests.values())
+    assert ks.site_match_radius_km == 20
+
+
+def test_pre_registered_pass_criteria():
+    pc = _parse_sites().pass_criteria
+    assert pc == {
+        "primary_median_rank_percentile_min": 90,
+        "negative_control_rank_percentile_below": 25,
+        "gate_tests": "all_rejected",
+    }

@@ -1,0 +1,43 @@
+# Known sites for validation (setup prompt section A3).
+#
+# ALL coordinates below are APPROXIMATE, written from memory in the setup prompt, and UNCONFIRMED.
+# Shaurya must confirm each one from a primary source before any result is published.
+# Every site therefore has `confirmed: false`. `gsop` prints a warning listing unconfirmed sites at
+# the start of every validation run and stamps `provisional: true` into validation.json while any
+# site is unconfirmed. Coordinates are lat / lon in degrees, lon in -180..180.
+#
+# Validation uses the best-scoring tile within `site_match_radius_km` of each point, so small
+# coordinate errors do not matter.
+#
+# Gate tests and negative controls apply to both bodies, so they list bodies [moon, mars].
+site_match_radius_km: 20
+
+# Pre-registered pass criteria. Written down before anything is computed. Report pass or fail as it
+# comes; never tune weights to pass.
+pass_criteria:
+  primary_median_rank_percentile_min: 90     # median rank percentile of primary sites for their intended body >= 90
+  negative_control_rank_percentile_below: 25 # negative controls must sit below the 25th percentile
+  gate_tests: all_rejected                   # all three gate tests must be rejected
+
+primary:      # the 10 Nov validation set
+  lonar:               {lat: 19.98,  lon: 76.51,   bodies: [mars, moon], confirmed: false}
+  haughton:            {lat: 75.37,  lon: -89.68,  bodies: [mars, moon], confirmed: false}
+  mcmurdo_dry_valleys: {lat: -77.5,  lon: 162.0,   bodies: [mars],       confirmed: false}
+  atacama_salars:      {lat: -23.5,  lon: -68.25,  bodies: [mars],       confirmed: false, note: "salars, not Yungay"}
+  ladakh_puga:         {lat: 33.22,  lon: 78.32,   bodies: [mars],       confirmed: false}
+  mdrs_utah:           {lat: 38.41,  lon: -110.79, bodies: [mars],       confirmed: false}
+
+secondary:    # in the novelty exclusion list and sensitivity checks, not in the pass criterion
+  sf_volcanic_field:   {lat: 35.35,  lon: -111.5,  bodies: [moon],       confirmed: false, radius_km: 30}
+  gosses_bluff:        {lat: -23.8,  lon: 132.3,   bodies: [moon, mars], confirmed: false, note: "the plan file flags this as uncertain"}
+  mauna_kea:           {lat: 19.82,  lon: -155.47, bodies: [moon],       confirmed: false}
+  askja:               {lat: 65.03,  lon: -16.75,  bodies: [moon, mars], confirmed: false}
+
+gate_tests:   # a correct pipeline must reject all three
+  manicouagan:         {lat: 51.1,   lon: -68.7,   bodies: [moon, mars], confirmed: false, expect: rejected, note: "coordinates as given in our files"}
+  tatacoa:             {lat: 3.23,   lon: -75.17,  bodies: [moon, mars], confirmed: false, expect: rejected, note: "coordinates as given in our files"}
+  samoylov:            {lat: 72.37,  lon: 126.48,  bodies: [moon, mars], confirmed: false, expect: rejected, note: "approximate"}
+
+negative_controls:   # must score low
+  amazon_basin:        {lat: -3.0,   lon: -60.0,   bodies: [moon, mars], confirmed: false}
+  congo_basin:         {lat: -0.5,   lon: 23.0,    bodies: [moon, mars], confirmed: false}
