@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Data and results are never tracked (placeholders only).
+data/**
+!data/**/
+!data/**/.gitkeep
+results/**
+!results/.gitkeep
+
+# Parquet files are allowed only under tests/golden/
+*.parquet
+!tests/golden/**/*.parquet
+
+# OS / editor
+.DS_Store
+Thumbs.db
