@@ -122,6 +122,22 @@ def mars_terrain_rows(cfg: Config, source: str = MOLA_URL, cache_dir: Optional[P
                          + ("; rough_a baseline is 500 m, not 100 m (MOLA cannot resolve it)" if col == "rough_a" else "")
                          + f"; window sha256 {info['sha256'][:16]}"),
             })
+        # target elevation (metres above the areoid): the input of the Mars target check (decision D6), not a scored column
+        from gsop.targets.moon import _summarise
+
+        n, step = int(round(cfg.features.operators.tile_m / info["cell_m"])), int(round(ts.tile_stride_km * 1000.0 / info["cell_m"]))
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # a tile with no valid cell gives NaN (and is skipped by the summary)
+            elev = np.array([np.nanmean(info["dem"][r : r + n, c : c + n]) for r in range(0, info["dem"].shape[0] - n + 1, step)
+                             for c in range(0, info["dem"].shape[1] - n + 1, step)], dtype="float64")
+        p = _summarise(elev, ts.spread_iqr_divisor)
+        rows.append({
+            "target": name, "column": "elevation_mean", "value": p["value"], "spread": p["spread"], "source": SOURCE_TEXT,
+            "evidence_grade": EVIDENCE_GRADE, "window": window, "unavailable": not np.isfinite(p["value"]),
+            "note": "metres above the areoid (MOLA); input of the Mars target check (D6), not a scored column",
+        })
     return rows
 
 

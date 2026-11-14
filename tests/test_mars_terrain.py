@@ -60,10 +60,14 @@ def test_rows_are_for_jezero_only_with_grades_and_the_baseline_note(tmp_path):
     write_mola(f, plane_in_true_metres(4.0))
     rows = MA.mars_terrain_rows(CFG, str(f))
     assert {r["target"] for r in rows} == {"jezero"}  # Arcadia has no coordinates (D10)
-    assert {r["column"] for r in rows} == set(MA.TERRAIN_COLUMNS)
+    assert {r["column"] for r in rows} == set(MA.TERRAIN_COLUMNS) | {"elevation_mean"}  # elevation feeds the Mars target check (D6)
     for r in rows:
         assert r["evidence_grade"] == "A" and not r["unavailable"] and "MOLA DEM 463 m" in r["source"]
-        assert "500 m equal-area grid" in r["window"] and "sha256" in r["note"]
+        assert "500 m equal-area grid" in r["window"]
+        if r["column"] in MA.TERRAIN_COLUMNS:
+            assert "sha256" in r["note"]
+    elev = [r for r in rows if r["column"] == "elevation_mean"][0]
+    assert "areoid" in elev["note"] and elev["value"] == pytest.approx(1000.0, abs=5.0)  # the synthetic plane is 1000 m at the target
     ra = [r for r in rows if r["column"] == "rough_a"][0]
     assert "rough_a baseline is 500 m, not 100 m" in ra["note"]
     assert [r for r in rows if r["column"] == "relief"][0]["value"] == pytest.approx(math.tan(math.radians(4.0)) * 11 * 500.0, rel=0.05)

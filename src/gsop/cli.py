@@ -46,6 +46,9 @@ def _stub(name: str) -> None:
 
 
 BodyOpt = typer.Option(..., "--body", help="Target body: moon or mars.")
+TargetCheckOpt = typer.Option(
+    None, "--target-check", help="Mars target check (decision D6): warn (default, the failing target is still scored and flagged) or strict (not scored)."
+)
 RunsOpt = typer.Option(
     None, "--runs", help="Monte Carlo runs (default: runs in config/run.yaml)."
 )
@@ -194,7 +197,7 @@ app.add_typer(s3, name="s3")
 
 
 @s3.command("gates")
-def s3_gates(body: Body = BodyOpt) -> None:
+def s3_gates(body: Body = BodyOpt, target_check: Optional[str] = TargetCheckOpt) -> None:
     """Passed and rejected tables with reasons."""
     _stub("s3 gates")
 
@@ -204,7 +207,7 @@ app.add_typer(s4, name="s4")
 
 
 @s4.command("score")
-def s4_score(body: Body = BodyOpt) -> None:
+def s4_score(body: Body = BodyOpt, target_check: Optional[str] = TargetCheckOpt) -> None:
     """Base similarity 0-100 per target x profile."""
     _stub("s4 score")
 
@@ -214,7 +217,7 @@ app.add_typer(s5, name="s5")
 
 
 @s5.command("simulate")
-def s5_simulate(body: Body = BodyOpt, runs: Optional[int] = RunsOpt) -> None:
+def s5_simulate(body: Body = BodyOpt, runs: Optional[int] = RunsOpt, target_check: Optional[str] = TargetCheckOpt) -> None:
     """Monte Carlo over weights and data."""
     _runs(runs)
     _stub("s5 simulate")
@@ -262,7 +265,7 @@ def s9_discover(body: Body = BodyOpt) -> None:
 
 # --- whole-pipeline and utility commands ------------------------------------
 @app.command()
-def run(body: Body = BodyOpt, runs: Optional[int] = RunsOpt) -> None:
+def run(body: Body = BodyOpt, runs: Optional[int] = RunsOpt, target_check: Optional[str] = TargetCheckOpt) -> None:
     """Run s3..s9 in order (resumable)."""
     _runs(runs)
     _stub("run")
