@@ -10,7 +10,7 @@ Sanity checks (each is pass or fail; **any failure blocks the Moon and Mars runs
 
 - every available feature lies inside its plausibility bounds (`src/gsop/earth/sanity.py`): slope in [0, 90], relief >= 0, `water_index` and `dust_index` in [0, 1], temperatures in a physical range, and so on;
 - `t_coldest <= t_mean`;
-- `rough_b >= rough_a` on at least 80% of tiles (the 80% is a tunable, unsourced reading of "most");
+- `rough_a >= rough_b` on at least 80% of tiles: both are RMS heights over the same 6 km tile and the coarser 1 km baseline smooths away short wavelengths, so the finer one is the larger (the first version of this check, from the issue text, expected the opposite; measured Moon data and the operator tests show it is wrong); the 80% is a tunable, unsourced reading of "most";
 - `slope_p90 >= slope_median`;
 - NaN share of each feature below `nan_warn_fraction` (20%); a feature that is NaN everywhere is reported as UNAVAILABLE and fails its own check;
 - no raw nodata value leaked into a feature; `tile_id` is unique.

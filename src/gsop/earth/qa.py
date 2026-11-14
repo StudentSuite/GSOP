@@ -17,7 +17,7 @@ from gsop.earth.build_parquet import FEATURE_COLUMNS
 from gsop.earth.sanity import SANITY_RANGES
 
 NODATA_SENTINELS = (-9999.0, -32768.0, 65535.0)  # raw nodata values an export could leak through
-ROUGH_B_GE_A_MIN_SHARE = 0.8  # TUNABLE, NOT SOURCED: "most tiles" for rough_b >= rough_a
+ROUGH_A_GE_B_MIN_SHARE = 0.8  # TUNABLE, NOT SOURCED: "most tiles" for rough_a >= rough_b (see run_qa)
 BAD_AREA_DEGREES = 10  # failing tiles are binned into 10 x 10 degree cells for the "known bad areas" list
 
 
@@ -79,9 +79,12 @@ def run_qa(df: pd.DataFrame, cfg: Config) -> list[Check]:
     bad = df["t_coldest"] > df["t_mean"] + 1e-3
     checks.append(Check("t_coldest <= t_mean", not bool(bad.fillna(False).any()), f"{int(bad.fillna(False).sum()):,} tile(s) with the coldest month warmer than the mean", bad.fillna(False)))
     rough = df[["rough_a", "rough_b"]].dropna()
-    share = float((rough.rough_b >= rough.rough_a).mean()) if len(rough) else float("nan")
-    checks.append(Check(f"rough_b >= rough_a on at least {ROUGH_B_GE_A_MIN_SHARE:.0%} of tiles", bool(share >= ROUGH_B_GE_A_MIN_SHARE),
-                        f"{share:.1%} of tiles", (df["rough_b"] < df["rough_a"]).fillna(False)))
+    # Both are RMS heights over the SAME 6 km tile; the coarser baseline (rough_b, 1 km) block-averages away short wavelengths,
+    # so rough_a (100 m) is the larger one on normal terrain. (The issue text expected the opposite; measured Moon data and the
+    # sine test show rough_a >= rough_b. A violation therefore means swapped or broken bands.)
+    share = float((rough.rough_a >= rough.rough_b - 1e-3).mean()) if len(rough) else float("nan")
+    checks.append(Check(f"rough_a >= rough_b on at least {ROUGH_A_GE_B_MIN_SHARE:.0%} of tiles", bool(share >= ROUGH_A_GE_B_MIN_SHARE),
+                        f"{share:.1%} of tiles", (df["rough_a"] < df["rough_b"] - 1e-3).fillna(False)))
     checks.append(Check("slope_p90 >= slope_med", not bool((df["slope_p90"] < df["slope_med"] - 1e-3).fillna(False).any()),
                         f"{int((df['slope_p90'] < df['slope_med'] - 1e-3).fillna(False).sum()):,} tile(s) where the 90th percentile is below the median",
                         (df["slope_p90"] < df["slope_med"] - 1e-3).fillna(False)))

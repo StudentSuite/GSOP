@@ -19,8 +19,8 @@ def healthy(n=500, seed=0):
     df = pd.DataFrame({c: rng.uniform(0.1, 0.9, n).astype("float32") for c in FEATURE_COLUMNS})
     df["slope_med"] = rng.uniform(0, 10, n)
     df["slope_p90"] = df.slope_med + rng.uniform(0, 8, n)
-    df["rough_a"] = rng.uniform(1, 10, n)
-    df["rough_b"] = df.rough_a + rng.uniform(0, 30, n)
+    df["rough_b"] = rng.uniform(1, 10, n)
+    df["rough_a"] = df.rough_b + rng.uniform(0, 30, n)  # the finer baseline has the larger RMS over the same tile
     df["t_mean"] = rng.uniform(260, 300, n)
     df["t_coldest"] = df.t_mean - rng.uniform(1, 20, n)
     df["ti_proxy"] = rng.uniform(5, 30, n)
@@ -50,11 +50,11 @@ def test_unit_error_and_flipped_sign_are_caught():
     df = healthy()
     df["slope_med"] = df["slope_med"] * 10  # a degrees-vs-percent style unit error: > 90
     df["t_coldest"] = df["t_mean"] + 5  # flipped sign
-    df["rough_b"] = df["rough_a"] * 0.5  # roughness baselines swapped
+    df["rough_b"] = df["rough_a"] * 2.0  # roughness baselines swapped
     names = failed(qa.run_qa(df, CFG))
     assert any("slope_med within" in n for n in names)
     assert "t_coldest <= t_mean" in names
-    assert any("rough_b >= rough_a" in n for n in names)
+    assert any("rough_a >= rough_b" in n for n in names)
     assert not qa.overall_pass(qa.run_qa(df, CFG))
 
 
