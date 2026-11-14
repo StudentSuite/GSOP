@@ -60,6 +60,12 @@ temperature:
   lst_scale_kelvin: 0.02      # catalog page: LST_Day_1km / LST_Night_1km scale 0.02, units K
   min_valid_obs_total: 100    # TUNABLE, NOT SOURCED: fewer valid 8-day composites than this over all years -> low_obs
   min_valid_obs_per_month: 5  # TUNABLE, NOT SOURCED: a calendar month with fewer valid composites is not used for t_coldest
+  # ti_proxy (dry-season day-night swing), issue B10. Dry season = the `dry_months` consecutive (cyclic) calendar
+  # months with the least precipitation (TerraClimate `pr`, same years). It only counts as a dry season when it
+  # is clearly drier than average: driest-3-month precipitation < dry_season_ratio_max * (annual precipitation / 4).
+  dry_months: 3               # setup prompt: "three driest consecutive months"
+  dry_season_ratio_max: 0.5   # TUNABLE, NOT SOURCED
+  precip_scale: 1.0           # multiplier to turn TerraClimate `pr` into mm. The catalog page lists no unit/scale: UNVERIFIED
 
 features:
   slope_med:

@@ -294,6 +294,9 @@ class TemperatureSettings:
     lst_scale_kelvin: float
     min_valid_obs_total: int
     min_valid_obs_per_month: int
+    dry_months: int
+    dry_season_ratio_max: float
+    precip_scale: float
 
 
 @dataclass(frozen=True)
@@ -670,14 +673,19 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
     )
     tw = f"{f}: temperature"
     tp = _map(_need(raw, "temperature", f), tw)
-    w.unknown(tp, ("start_year", "end_year", "lst_scale_kelvin", "min_valid_obs_total", "min_valid_obs_per_month"), tw)
+    w.unknown(tp, ("start_year", "end_year", "lst_scale_kelvin", "min_valid_obs_total", "min_valid_obs_per_month", "dry_months", "dry_season_ratio_max", "precip_scale"), tw)
     temperature = TemperatureSettings(
         start_year=_int(_need(tp, "start_year", tw), f"{tw}.start_year", lo=2000),
         end_year=_int(_need(tp, "end_year", tw), f"{tw}.end_year", lo=2000),
         lst_scale_kelvin=_num(_need(tp, "lst_scale_kelvin", tw), f"{tw}.lst_scale_kelvin", lo=0),
         min_valid_obs_total=_int(_need(tp, "min_valid_obs_total", tw), f"{tw}.min_valid_obs_total", lo=1),
         min_valid_obs_per_month=_int(_need(tp, "min_valid_obs_per_month", tw), f"{tw}.min_valid_obs_per_month", lo=1),
+        dry_months=_int(_need(tp, "dry_months", tw), f"{tw}.dry_months", lo=1),
+        dry_season_ratio_max=_num(_need(tp, "dry_season_ratio_max", tw), f"{tw}.dry_season_ratio_max", lo=0),
+        precip_scale=_num(_need(tp, "precip_scale", tw), f"{tw}.precip_scale", lo=0),
     )
+    if temperature.dry_months >= 12:
+        _fail(tw, "dry_months must be below 12")
     if temperature.end_year < temperature.start_year:
         _fail(tw, "end_year must not be before start_year")
     cols: dict[str, Feature] = {}

@@ -224,3 +224,62 @@ def temperature_bands(ee: Any, cfg: Config) -> Any:
     t6 = stack.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=cells)
     low6 = low_obs.reduceResolution(reducer=ee.Reducer.max(), maxPixels=cells)
     return t6.updateMask(low6.Not()).addBands(low6.rename("t_low_obs"))
+
+
+TERRACLIMATE_ID = "IDAHO_EPSCOR/TERRACLIMATE"
+
+
+def ti_proxy_bands(ee: Any, cfg: Config) -> Any:
+    """Bands ``ti_proxy`` (K) and ``ti_proxy_fallback`` (1 = no dry season, median swing used) at 6 km.
+
+    Same definition as ``gsop.ti_proxy`` (numpy reference): swing = day LST minus night LST per 8-day MOD11A2
+    composite (both QA good); the dry season is the 3 consecutive cyclic months with the least TerraClimate
+    precipitation; ``ti_proxy`` is the mean of those months' mean swings; fallback is the median swing over all
+    valid composites. Computed on the MODIS 1 km grid (precipitation is sampled onto it, nearest neighbour),
+    then averaged to the 6 km tile (the fallback flag takes the tile maximum).
+    """
+    t = cfg.features.temperature
+    ops = cfg.features.operators
+    k = t.dry_months
+    years = (f"{t.start_year}-01-01", f"{t.end_year + 1}-01-01")
+    col = ee.ImageCollection(MODIS_LST_ID).filterDate(*years)
+    proj = col.first().select(0).projection()
+
+    def swing(img: Any) -> Any:
+        ok = img.select("QC_Day").bitwiseAnd(3).eq(0).And(img.select("QC_Night").bitwiseAnd(3).eq(0))
+        s = img.select("LST_Day_1km").subtract(img.select("LST_Night_1km")).multiply(t.lst_scale_kelvin)
+        return s.updateMask(ok).rename("swing").copyProperties(img, ["system:time_start"])
+
+    swings = col.map(swing)
+    tc = ee.ImageCollection(TERRACLIMATE_ID).filterDate(*years).select("pr")
+    pr_m = [tc.filter(ee.Filter.calendarRange(m, m, "month")).mean().multiply(t.precip_scale).rename("pr") for m in range(1, 13)]
+    sw_m = [swings.filter(ee.Filter.calendarRange(m, m, "month")).mean().rename("swing") for m in range(1, 13)]
+
+    sums = [sum_images(ee, [pr_m[(s + j) % 12] for j in range(k)]).rename("sum") for s in range(12)]
+    totals = ee.Image.cat(sums)  # 12 bands: window totals for start month 0..11
+    start = totals.toArray().arrayArgmin().arrayGet([0]).rename("start")
+    driest = ee.ImageCollection.fromImages(sums).min().rename("driest")
+    annual = sum_images(ee, pr_m)
+    defined = driest.lt(annual.divide(12.0).multiply(k * t.dry_season_ratio_max)).Or(annual.lte(1e-6))
+
+    in_window = []
+    for m in range(12):
+        # month m (0-based) is in the dry window iff (m - start) mod 12 < k  (+12 keeps the value positive)
+        member = start.multiply(-1).add(m + 12).mod(12).lt(k)
+        in_window.append(sw_m[m].updateMask(member))
+    dry_swing = ee.ImageCollection.fromImages(in_window).mean()
+    median_all = swings.median()
+    use_dry = defined.And(dry_swing.mask())
+    ti = median_all.where(use_dry, dry_swing).rename("ti_proxy")
+    fallback = use_dry.Not().rename("ti_proxy_fallback")
+    cells = int(round(ops.tile_m / 926.0)) ** 2 + 64
+    ti6 = ti.setDefaultProjection(proj).reduceResolution(reducer=ee.Reducer.mean(), maxPixels=cells)
+    fb6 = fallback.setDefaultProjection(proj).reduceResolution(reducer=ee.Reducer.max(), maxPixels=cells)
+    return ti6.addBands(fb6)
+
+
+def sum_images(ee: Any, images: list) -> Any:
+    total = images[0]
+    for img in images[1:]:
+        total = total.add(img)
+    return total
