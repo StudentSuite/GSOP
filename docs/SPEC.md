@@ -209,7 +209,11 @@ TODO (phase C). Multiply base weights by the purpose multipliers, then renormali
 
 ## Monte Carlo (s5)
 
-TODO (phase C). 2,000 runs, master seed 20261114 (D2); jitters weights and data (D8); batched float32, online statistics, no N x 2000 matrix.
+`src/gsop/montecarlo.py`. 2,000 runs, master seed 20261114 (D2); the Monte Carlo jitters weights and data (D8).
+
+**Seeds.** Run `i` uses `SeedSequence(master_seed, spawn_key=(i,))`, which equals child `i` of `SeedSequence(master_seed).spawn(n)` for any `n` (tested), so a run never depends on the worker count or on how many runs there are. The run's two children, `spawn_key=(i, 0)` (weight stream) and `(i, 1)` (data stream), never overlap. Every function that depends on `i` is pure (no global random state): any worker can reproduce any run from the set-up and the index.
+
+**Weights, per run (issue C15).** Draw each family weight uniformly within its `range` in `config/weights.yaml`; renormalise to sum 1; multiply by the purpose multipliers; renormalise again. (Because renormalising is scale-invariant the first renormalisation does not change the final vector; the order is kept because it states what the weights mean at each step.) The range, not the derived weight, is what is sampled: the Moon `thermal_inertia` range is 0.02 to 0.04 although its derived weight is 0.019.
 
 ## ML (s6)
 
