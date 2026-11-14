@@ -79,6 +79,7 @@ def run_simulate(cfg: Config, body: str, paths: Paths, runs: Optional[int] = Non
     profiles = profiles_from_frame(read_targets(paths.targets_parquet(body)))
     scored, info = s3.scored_targets(cfg, body, profiles, mode, log)
     passed = pd.read_parquet(out / "gates_passed.parquet")
+    illum = pd.read_parquet(out / "scores_base.parquet", columns=["target", "tile_id", "illumination_match"])  # shown beside the total (issue C28)
     purposes = list(cfg.purposes(body))
     derived = weight_vector(derive_weights(cfg, body))
     convergence: dict = {}
@@ -116,6 +117,8 @@ def run_simulate(cfg: Config, body: str, paths: Paths, runs: Optional[int] = Non
             tbl.insert(0, "target", name)
             tbl.insert(1, "profile", p)
             tbl.insert(2, "confidence", res.confidence)
+            im = illum[illum.target == name].drop_duplicates("tile_id").set_index("tile_id")["illumination_match"]
+            tbl.insert(4, "illumination_match", tbl["tile_id"].map(im).astype("float32"))
             tbl["fails_own_gate"] = check.fails_own_gate
             tbl["own_gate_reasons"] = ";".join(check.reasons)
             _atomic_parquet(tbl, mc_path)
@@ -138,7 +141,7 @@ def stage(cfg: Config, body: str, paths: Paths, runs: Optional[int] = None, work
     def run(ctx) -> None:
         run_simulate(cfg, body, paths, runs, workers, target_check, log=log)
 
-    return Stage("s5", run, inputs=[paths.earth_parquet, paths.targets_parquet(body), out / "gates_passed.parquet", out / "sigma_table.json"],
+    return Stage("s5", run, inputs=[paths.earth_parquet, paths.targets_parquet(body), out / "gates_passed.parquet", out / "sigma_table.json", out / "scores_base.parquet"],
                  outputs=[out / "convergence.json", out / "mc_summary.json"],
                  config_parts=["weights", "purposes", "features", "run", "gates", "targets"], code_version=f"s5:{n_runs}:{_code_hash()}:{mode}")
 

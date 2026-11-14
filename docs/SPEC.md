@@ -239,11 +239,11 @@ TODO (phase D). Pass criteria are pre-registered in `config/known_sites.yaml` be
 
 ## Export (s8)
 
-TODO (phase E). See `docs/RESULTS_SCHEMA.md` once it exists.
+TODO (phase E). See `docs/RESULTS_SCHEMA.md`. Required by issue C28: the exported scores must keep the `illumination_match` column (the illumination family's similarity alone; Earth cannot match polar lighting, so it is shown beside the total and never used to rank).
 
 ## Discovery (s9)
 
-TODO (phase E). Robust tiles more than 100 km from every known site.
+TODO (phase E). Robust tiles more than 100 km from every known site. Each candidate card shows `illumination_match` beside the score: it is already a column of every `mc_<target>_<profile>.parquet` row (issue C28).
 
 ## Target profiles (s2 targets)
 

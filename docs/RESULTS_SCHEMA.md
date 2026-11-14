@@ -47,6 +47,7 @@ Profiles: Moon `base`, `landing_mobility`, `power_night`, `ice_resources`; Mars 
 | `confidence` | string, nullable | `low` for Mars `landing_mobility` and `power_night` |
 | `fails_own_gate`, `own_gate_reasons` | bool, string | the Mars target check (D6), see the top of this file |
 | `tile_id` | int64 | tile |
+| `illumination_match` | float32 | the illumination family's similarity alone (0 to 1; Moon `illumination`, Mars `sunlight`), copied from `scores_base.parquet` so the discovery cards show it beside the total. Earth cannot match polar lighting, so a tile can score high overall with a low value here; **it is not part of any ranking or filter**, it is shown, not used |
 | `mc_mean`, `mc_std` | float32 | mean and standard deviation of the score over the runs |
 | `freq_top1`, `freq_top5`, `freq_top10` | float32 | share of runs in which the tile was in the top 1%, 5%, 10% of gated tiles |
 | `robust` | bool | `freq_top5 >= 0.9` (in the top 5% in at least 90% of the runs; thresholds in `config/run.yaml`) |
