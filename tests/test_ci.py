@@ -21,3 +21,20 @@ def test_workflow_matrix_and_steps():
 def test_readme_has_the_badge():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert "actions/workflows/test.yml/badge.svg" in readme
+
+
+def test_repo_hygiene_files():
+    pr = (ROOT / ".github" / "pull_request_template.md").read_text(encoding="utf-8")
+    for needle in ("Closes #", "uv run pytest -q", "docs/SPEC.md", "docs/UNVERIFIED.md", "Windows and macOS", "uv.lock"):
+        assert needle in pr, needle
+    templates = sorted((ROOT / ".github" / "ISSUE_TEMPLATE").glob("*.md"))
+    assert {t.name for t in templates} == {"task.md", "bug.md"}
+    for t in templates:
+        text = t.read_text(encoding="utf-8")
+        assert text.startswith("---\n")
+        front = yaml.safe_load(text.split("---")[1])
+        assert front["name"] and front["about"]
+    contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    for needle in ("Never push to `main`", "<phase>-<key>-<slug>", "tag Anay", "branches/main/protection"):
+        assert needle in contributing, needle
+    assert "CONTRIBUTING.md" in (ROOT / "README.md").read_text(encoding="utf-8")

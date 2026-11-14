@@ -9,6 +9,7 @@ GSOP (Geospatial Similarity Observation Platform) scores every 6 km land tile on
 - [docs/SPEC.md](docs/SPEC.md): the specification, one section per pipeline stage s1 to s9.
 - [docs/DECISIONS.md](docs/DECISIONS.md): decisions D1 to D10, made by Anay.
 
+- [CONTRIBUTING.md](CONTRIBUTING.md): rules for issues, branches and pull requests.
 - [docs/UNVERIFIED.md](docs/UNVERIFIED.md): everything not yet checked against a primary source.
 - [docs/PROVENANCE.md](docs/PROVENANCE.md): where each dataset and package version comes from.
 
