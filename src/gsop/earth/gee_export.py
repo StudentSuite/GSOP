@@ -158,3 +158,69 @@ def rough_band(ee: Any, cfg: Config, column: str) -> Any:
     )
     rms = resid.max(0).sqrt().rename(column)
     return rms.updateMask(_enough_cells(ee, z, cfg, baseline, n * n + 16))
+
+
+MODIS_LST_ID = "MODIS/061/MOD11A2"
+
+
+def lst_qa_is_good(qc: int) -> bool:
+    """MOD11A2 QC rule used for temperature: mandatory-QA bits 0-1 equal 0 (good quality), nothing else.
+
+    (Bits 0-1: 0 good, 1 unreliable or unquantifiable, 2 not produced due to clouds, 3 not produced for other
+    reasons; from the catalog page, docs/PROVENANCE.md.) The Earth Engine expression applies the same rule.
+    """
+    return (int(qc) & 3) == 0
+
+
+def _lst_composites(ee: Any, cfg: Config) -> Any:
+    """8-day composites 2015-2024 with ``temp`` = mean of day and night LST in K, only where BOTH are good."""
+    t = cfg.features.temperature
+    scale = t.lst_scale_kelvin
+    col = (
+        ee.ImageCollection(MODIS_LST_ID)
+        .filterDate(f"{t.start_year}-01-01", f"{t.end_year + 1}-01-01")
+    )
+
+    def to_kelvin(img: Any) -> Any:
+        day_ok = img.select("QC_Day").bitwiseAnd(3).eq(0)
+        night_ok = img.select("QC_Night").bitwiseAnd(3).eq(0)
+        day = img.select("LST_Day_1km").multiply(scale).updateMask(day_ok)
+        night = img.select("LST_Night_1km").multiply(scale).updateMask(night_ok)
+        mean = day.add(night).divide(2).rename("temp")  # masked where either is masked
+        return mean.copyProperties(img, ["system:time_start"])
+
+    return col.map(to_kelvin)
+
+
+def temperature_bands(ee: Any, cfg: Config) -> Any:
+    """Bands ``t_mean``, ``t_coldest`` (K) and ``t_low_obs`` (1 = too few valid observations) at 6 km.
+
+    * Composite temperature = mean of day and night LST of one 8-day MOD11A2 composite, kept only when both
+      have QA "good" (day-only values would be biased warm).
+    * ``t_mean`` = mean of all valid composites 2015-2024.
+    * ``t_coldest`` = the lowest of the 12 calendar-month means (each month averaged over all years), using
+      only months with at least ``min_valid_obs_per_month`` valid composites.
+    * ``t_low_obs`` = 1 where the number of valid composites is below ``min_valid_obs_total``; the temperature
+      bands are masked there (NaN, never a fake number).
+    * 1 km values are averaged to the 6 km tile with ``reduceResolution(mean)``.
+    """
+    t = cfg.features.temperature
+    ops = cfg.features.operators
+    comps = _lst_composites(ee, cfg)
+    proj = comps.first().select(0).projection()
+    mean_all = comps.mean().setDefaultProjection(proj)
+    n_valid = comps.count().setDefaultProjection(proj)
+
+    monthly = []
+    for month in range(1, 13):
+        m = comps.filter(ee.Filter.calendarRange(month, month, "month"))
+        ok = m.count().gte(t.min_valid_obs_per_month)
+        monthly.append(m.mean().updateMask(ok).rename("temp"))
+    coldest = ee.ImageCollection.fromImages(monthly).min().setDefaultProjection(proj)
+
+    low_obs = n_valid.lt(t.min_valid_obs_total).rename("t_low_obs")
+    stack = ee.Image.cat([mean_all.rename("t_mean"), coldest.rename("t_coldest")])
+    cells = int(round(ops.tile_m / 926.0)) ** 2 + 64  # about 6 x 6 MODIS cells, with slack
+    t6 = stack.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=cells)
+    low6 = low_obs.reduceResolution(reducer=ee.Reducer.max(), maxPixels=cells)
+    return t6.updateMask(low6.Not()).addBands(low6.rename("t_low_obs"))

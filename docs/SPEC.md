@@ -30,6 +30,10 @@ TODO (phase B). Fixed by decision D1: 6 km x 6 km tiles on the equal-area grid E
 
 Columns, sources and uncertainty floors are in `config/features.yaml`. `water_index` and `silica_index` are cross-instrument proxies and are the two weakest comparisons in the index. Other feature definitions are added below by the issue that builds each one.
 
+### Earth temperature: `t_mean`, `t_coldest` (issue B09)
+
+From MODIS Terra LST `MODIS/061/MOD11A2` (1 km, 8-day), 2015-2024, config block `temperature`. Per composite the temperature is the **mean of day and night LST, kept only where both have QA 'good'** (QC bits 0-1 equal 0); a day-only value would be biased warm. `t_mean` is the mean of all valid composites; `t_coldest` is the lowest of the 12 calendar-month means (each averaged over all ten years), using only months with at least `min_valid_obs_per_month` valid composites. 1 km values are averaged to the 6 km tile. A tile with fewer than `min_valid_obs_total` valid composites gets `t_low_obs = 1` and **NaN** temperatures (never a fake number); both thresholds are tunable and unsourced. Known bias: cloudy seasons (monsoon, polar night) drop out of the composites, so the 'annual' mean over-represents clear seasons there.
+
 ### Illumination: `sun_max_elev`, `sun_low_share`, `insol_annual` (issue B08)
 
 One analytic numpy implementation (`src/gsop/illumination.py`) for Earth, Moon and Mars. Per-body inputs are the obliquity and solar irradiance in `config/features.yaml` (block `illumination`, each with a source; the Moon obliquity 1.54 degrees is not on the NASA fact sheet and is marked unverified). Over a year the Sun's declination `d` satisfies `sin d = sin(eps) sin(L)`; at latitude `phi` and hour angle `h`, `sin e = sin(phi) sin(d) + cos(phi) cos(d) cos(h)`.

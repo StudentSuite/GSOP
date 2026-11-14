@@ -98,3 +98,19 @@ def test_relief_and_rough_build_with_the_documented_reducers():
     ee.Image.pixelCoordinates.assert_called()
     ee.Reducer.mean.assert_called()
     # 1 km baseline: 6 cells per tile side; maxPixels = 6*6 + 16
+
+
+def test_lst_qa_rule_and_config_window():
+    assert G.lst_qa_is_good(0) and G.lst_qa_is_good(0b11111100)  # only bits 0-1 matter
+    assert not G.lst_qa_is_good(1) and not G.lst_qa_is_good(2) and not G.lst_qa_is_good(3)
+    t = CFG.features.temperature
+    assert (t.start_year, t.end_year, t.lst_scale_kelvin) == (2015, 2024, 0.02)
+    assert t.min_valid_obs_total > 0 and t.min_valid_obs_per_month > 0
+
+
+def test_temperature_bands_use_the_documented_collection_and_window():
+    ee = MagicMock()
+    G.temperature_bands(ee, CFG)
+    ee.ImageCollection.assert_any_call(G.MODIS_LST_ID)
+    ee.ImageCollection.return_value.filterDate.assert_called_with("2015-01-01", "2025-01-01")
+    assert ee.Filter.calendarRange.call_count == 12  # one per calendar month

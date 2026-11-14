@@ -288,11 +288,21 @@ class IlluminationSettings:
 
 
 @dataclass(frozen=True)
+class TemperatureSettings:
+    start_year: int
+    end_year: int
+    lst_scale_kelvin: float
+    min_valid_obs_total: int
+    min_valid_obs_per_month: int
+
+
+@dataclass(frozen=True)
 class Features:
     columns: dict[str, Feature]
     gate_layers: dict[str, dict[str, Any]]
     operators: OperatorSettings
     illumination: IlluminationSettings
+    temperature: TemperatureSettings
 
 
 @dataclass(frozen=True)
@@ -612,7 +622,7 @@ def _parse_ledger(raw: Any, purposes: dict, w: _Warn) -> Ledger:
 def _parse_features(raw: Any, w: _Warn) -> Features:
     f = "features.yaml"
     raw = _map(raw, f)
-    w.unknown(raw, ("features", "gate_layers", "operators", "illumination"), f)
+    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature"), f)
     ow = f"{f}: operators"
     op = _map(_need(raw, "operators", f), ow)
     w.unknown(op, ("grid_crs", "tile_m", "baseline_m", "slope_method", "max_nan_fraction", "earth_dem"), ow)
@@ -658,6 +668,18 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         hour_samples=_int(_need(il, "hour_samples", iw), f"{iw}.hour_samples", lo=8),
         bodies=consts,
     )
+    tw = f"{f}: temperature"
+    tp = _map(_need(raw, "temperature", f), tw)
+    w.unknown(tp, ("start_year", "end_year", "lst_scale_kelvin", "min_valid_obs_total", "min_valid_obs_per_month"), tw)
+    temperature = TemperatureSettings(
+        start_year=_int(_need(tp, "start_year", tw), f"{tw}.start_year", lo=2000),
+        end_year=_int(_need(tp, "end_year", tw), f"{tw}.end_year", lo=2000),
+        lst_scale_kelvin=_num(_need(tp, "lst_scale_kelvin", tw), f"{tw}.lst_scale_kelvin", lo=0),
+        min_valid_obs_total=_int(_need(tp, "min_valid_obs_total", tw), f"{tw}.min_valid_obs_total", lo=1),
+        min_valid_obs_per_month=_int(_need(tp, "min_valid_obs_per_month", tw), f"{tw}.min_valid_obs_per_month", lo=1),
+    )
+    if temperature.end_year < temperature.start_year:
+        _fail(tw, "end_year must not be before start_year")
     cols: dict[str, Feature] = {}
     known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy", "availability")
     for name, spec in _map(_need(raw, "features", f), f"{f}: features").items():
@@ -710,7 +732,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         spec = _map(spec, where)
         _str(_need(spec, "definition", where), f"{where}.definition")
         layers[name] = dict(spec)
-    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination)
+    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature)
 
 
 def _parse_run(raw: Any, w: _Warn) -> RunConfig:

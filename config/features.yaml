@@ -53,6 +53,14 @@ illumination:
       source: "NASA Mars Fact Sheet (nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html): obliquity to orbit 25.19, solar irradiance 586.2 (the page does not say at which distance)"
       verified_on: "2026-11-14"
 
+# Earth temperature climatology from MODIS LST (MOD11A2, verified in docs/PROVENANCE.md). Method in docs/SPEC.md.
+temperature:
+  start_year: 2015            # setup prompt: "Use 2015-2024 climatology for MODIS"
+  end_year: 2024
+  lst_scale_kelvin: 0.02      # catalog page: LST_Day_1km / LST_Night_1km scale 0.02, units K
+  min_valid_obs_total: 100    # TUNABLE, NOT SOURCED: fewer valid 8-day composites than this over all years -> low_obs
+  min_valid_obs_per_month: 5  # TUNABLE, NOT SOURCED: a calendar month with fewer valid composites is not used for t_coldest
+
 features:
   slope_med:
     definition: "Median over the 6 km tile of slope computed at one shared 500 m baseline"
