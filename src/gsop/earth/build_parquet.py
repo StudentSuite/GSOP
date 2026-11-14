@@ -161,6 +161,7 @@ def build_earth_parquet(
     out_dir: Path,
     max_cells: Optional[int] = None,
     log: Callable[[str], None] = print,
+    write_manifest: bool = True,
 ) -> dict:
     """Pass 1 (dust limits), pass 2 (rows to parquet in blocks), then ``grid.json``. Returns the grid info dict."""
     from gsop.doctor import chunk_cells, collect
@@ -237,6 +238,13 @@ def build_earth_parquet(
     }
     atomic_write_text(out_dir / "grid.json", json.dumps(grid_info, indent=2) + "\n")
     log(f"[build] wrote {parquet_path} ({n_rows:,} land tiles, {len(grid_info['columns'])} columns) and grid.json")
+    if write_manifest:  # data/MANIFEST.json lists the sha256 of every file in data/processed/ (nothing under data/ is committed)
+        from gsop.manifest import write_manifest as _write
+
+        manifest_path = _write(out_dir.parent)
+        entries = json.loads(manifest_path.read_text(encoding="utf-8"))["files"]
+        for name, e in entries.items():
+            log(f"[build] manifest: {name}  {e['size']:,} bytes  sha256 {e['sha256']}")
     return grid_info
 
 

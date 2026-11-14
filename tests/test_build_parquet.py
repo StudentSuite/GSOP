@@ -130,3 +130,21 @@ def test_a_raster_without_land_frac_is_refused(tmp_path):
         ds.set_band_description(1, "slope_med")
     with pytest.raises(ValueError, match="land_frac"):
         B.build_earth_parquet([p], CFG, tmp_path / "o", max_cells=10, log=lambda m: None)
+
+
+def test_manifest_is_written_after_the_build_and_verifies(built):
+    tmp, out, _, _, logs = built
+    from gsop import manifest
+
+    assert (tmp / "MANIFEST.json").is_file()
+    result = manifest.verify_data(tmp)
+    assert result.ok and result.checked == 2  # parquet and grid.json
+    names = json.loads((tmp / "MANIFEST.json").read_text(encoding="utf-8"))["files"]
+    assert set(names) == {"earth_features_6km.parquet", "grid.json"}
+    assert any("sha256" in m and "earth_features_6km.parquet" in m for m in logs)
+
+
+def test_handoff_section_for_s():
+    text = (ROOT / "HANDOFF_S.md").read_text(encoding="utf-8")
+    for needle in ("data/processed/", "uv run gsop verify-data", "is not in this repository", "sha256"):
+        assert needle in text, needle
