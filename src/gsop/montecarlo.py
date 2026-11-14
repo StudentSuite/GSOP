@@ -244,6 +244,19 @@ def top_k_sizes(n_tiles: int, fractions) -> list[int]:
     return [max(1, int(np.ceil(f * n_tiles))) for f in fractions]
 
 
+def top_k_by_key(key: np.ndarray, k: int) -> np.ndarray:
+    """Indices of the ``k`` largest ``key`` values in ranked order (key descending, then lower index). O(N) memory: one partition, no lexsort of full arrays."""
+    n = len(key)
+    if k >= n:
+        cand = np.arange(n)
+    else:
+        thr = np.partition(key, n - k)[n - k]
+        strict = np.flatnonzero(key > thr)
+        ties = np.flatnonzero(key == thr)[: k - len(strict)]
+        cand = np.sort(np.concatenate([strict, ties]))
+    return cand[np.lexsort((cand, -key[cand].astype(np.float64)))]
+
+
 def top_sets(score: np.ndarray, fractions) -> list[np.ndarray]:
     """Indices of the top ``fraction`` of tiles for each fraction (nested: the 1% set is inside the 5% set, inside the 10% set), in ranked order.
 
@@ -313,13 +326,14 @@ RANK_SCALE = 100.0  # ranks are stored as uint16 in hundredths of a percentile p
 
 
 def select_candidates(mean_score: np.ndarray, count_top5: np.ndarray, fraction: float) -> np.ndarray:
-    """Candidate tiles: the union of the top ``fraction`` of tiles by mean score and by membership count of the top 5% set (ties by mean, then lower index).
+    """Candidate tiles: the union of the top ``fraction`` of tiles by mean score and by membership count of the top-5% set (ties by mean, then lower index).
 
-    Returned as sorted tile indices (positions in the tile block, not tile ids)."""
+    The second ranking uses the single key ``count * 1000 + mean`` (the mean of a 0-100 score is below 1000, so the count decides first and the mean breaks
+    ties). Returned as sorted tile indices (positions in the tile block, not tile ids)."""
     n = len(mean_score)
     k = max(1, int(np.ceil(fraction * n)))
-    by_mean = np.lexsort((np.arange(n), -mean_score))[:k]
-    by_freq = np.lexsort((np.arange(n), -mean_score, -count_top5.astype(np.int64)))[:k]
+    by_mean = top_k_by_key(mean_score, k)
+    by_freq = top_k_by_key(count_top5.astype(np.float64) * 1000.0 + mean_score, k)
     return np.union1d(by_mean, by_freq)
 
 
@@ -460,19 +474,22 @@ def jaccard(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def top1_set(counts: np.ndarray, n: int, fractions) -> np.ndarray:
-    """The top-1% set by membership: tiles ranked by count of the top-1% set, then of the 5% and 10% sets, then lower index."""
+    """The top-1% set by membership: tiles ranked by count of the top-1% set, then of the 5% and 10% sets, then lower index.
+
+    The three counts (each at most 65,535) are packed into one uint64 key, so the ranking needs one array, not a four-key lexsort."""
     k = top_k_sizes(n, fractions)[0]
-    order = np.lexsort((np.arange(n), -counts[:, 2].astype(np.int64), -counts[:, 1].astype(np.int64), -counts[:, 0].astype(np.int64)))
-    return order[:k]
+    key = (counts[:, 0].astype(np.uint64) << np.uint64(32)) | (counts[:, 1].astype(np.uint64) << np.uint64(16)) | counts[:, 2].astype(np.uint64)
+    return top_k_by_key(key, k)
 
 
 def convergence_report(seg_counters: list[np.ndarray], checkpoints: list[int], fractions) -> dict:
     """Top-1% set overlap (Jaccard) between the set after each checkpoint (cumulative counts of the first ``c`` runs) and the final set."""
     n = seg_counters[0].shape[0]
-    cumulative = np.zeros_like(seg_counters[0], dtype=np.int64)
+    cumulative = np.zeros_like(seg_counters[0])  # uint16: a cumulative count never exceeds the number of runs
     sets = []
     for j in range(len(checkpoints)):
-        cumulative += seg_counters[j] if j < len(seg_counters) else 0
+        if j < len(seg_counters):
+            cumulative += seg_counters[j]
         sets.append(top1_set(cumulative, n, fractions))
     final = sets[-1]
     return {"definition": "top 1% of tiles by membership count of the top-1% set (then 5%, 10%, then lower index)",
@@ -484,14 +501,15 @@ def build_results_table(tile_ids: np.ndarray, stats: OnlineStats, counts: np.nda
     """One row per tile that ever reached the top 10% or is a candidate. ``freq_topK`` = share of runs in the top K%; ``robust`` = ``freq`` of the
     robust fraction (5%) at least ``robust_min_share`` (90%). Pass 2 columns are NaN for non-candidates."""
     n = len(tile_ids)
-    freq = counts.astype(np.float32) / np.float32(params.runs)
     is_cand = np.zeros(n, dtype=bool)
     is_cand[cand_idx] = True
     keep = np.flatnonzero((counts[:, -1] > 0) | is_cand)
-    cols = {"tile_id": tile_ids[keep], "mc_mean": stats.mean[keep].astype(np.float32), "mc_std": np.sqrt(stats.variance[keep]).astype(np.float32)}
+    freq = counts[keep].astype(np.float32) / np.float32(params.runs)  # only the listed rows, not all N tiles
+    var_keep = stats.m2[keep] / max(stats.count, 1)
+    cols = {"tile_id": tile_ids[keep], "mc_mean": stats.mean[keep].astype(np.float32), "mc_std": np.sqrt(var_keep).astype(np.float32)}
     for j, f in enumerate(params.fractions):
-        cols[f"freq_top{int(round(f * 100))}"] = freq[keep, j]
-    cols["robust"] = freq[keep, params.robust_index] >= params.robust_min_share
+        cols[f"freq_top{int(round(f * 100))}"] = freq[:, j]
+    cols["robust"] = freq[:, params.robust_index] >= params.robust_min_share
     cols["is_candidate"] = is_cand[keep]
     pos = np.full(n, -1, dtype=np.int64)
     pos[cand_idx] = np.arange(len(cand_idx))
@@ -595,25 +613,32 @@ def simulate(x: np.ndarray, tile_ids: np.ndarray, mcs: MCSetup, params: MCParams
         return work / f"p1_{a}_{b}.npz"
 
     t0 = time.perf_counter()
-    blocks: "list[Pass1Block]" = []
     todo = [(a, b) for a, b in plan if not (persist and p1_path(a, b).exists())]
     done_before = len(plan) - len(todo)
     if done_before:
         log(f"[mc] {mcs.target}/{mcs.profile}: resuming, {done_before} of {len(plan)} pass 1 blocks already done")
-    for a, b in plan:
-        if persist and p1_path(a, b).exists():
-            blocks.append(_load_block(p1_path(a, b), a, b))
     bar = _progress(len(todo), f"{mcs.target}/{mcs.profile} pass 1")
     tasks = [(mcs, a, b, params.fractions, edges, chunk_rows) for a, b in todo]
-    for (a, b), blk in zip(todo, iter_parallel(compute_pass1_block, tasks, {"x": x}, workers)):
-        if persist:
-            _save_block(p1_path(a, b), blk)
-        blocks.append(blk)
-        bar.update(1)
+    fresh = iter(iter_parallel(compute_pass1_block, tasks, {"x": x}, workers))  # results arrive in plan order, restricted to the missing blocks
+    # Merge each block the moment it is available, in run order, and drop it: holding all blocks at once would cost (blocks x 120 MB) at 4 million tiles.
+    stats = OnlineStats(n)
+    seg = [np.zeros((n, len(params.fractions)), dtype=np.uint16) for _ in range(len(cps))]
+    for a, b in plan:
+        if persist and p1_path(a, b).exists() and (a, b) not in todo:
+            blk = _load_block(p1_path(a, b), a, b)
+        else:
+            blk = next(fresh)
+            if persist:
+                _save_block(p1_path(a, b), blk)
+            bar.update(1)
+        stats.merge(blk.stats)
+        for k, c in blk.counters.items():
+            seg[k] += c
+        del blk
     bar.close()
-    stats, seg = merge_pass1(blocks, n, len(cps), len(params.fractions))
-    blocks.clear()
-    counts = sum(seg[1:], seg[0]) if len(seg) > 1 else seg[0]
+    counts = seg[0].copy()
+    for extra in seg[1:]:
+        counts += extra  # uint16 in place: no int64 copies
     t1 = time.perf_counter()
 
     cand = select_candidates(stats.mean, counts[:, params.robust_index], params.candidate_fraction)
@@ -645,7 +670,7 @@ def simulate(x: np.ndarray, tile_ids: np.ndarray, mcs: MCSetup, params: MCParams
         if tmp_ctx is not None:
             tmp_ctx.cleanup()
     t2 = time.perf_counter()
-    table = build_results_table(tile_ids, stats, counts.astype(np.uint16), cand, summary, params)
+    table = build_results_table(tile_ids, stats, counts, cand, summary, params)
     conv = convergence_report(seg, cps, params.fractions)
     if persist and not keep_work:
         import shutil
@@ -680,3 +705,39 @@ def _progress(total: int, desc: str) -> _Bar:
     return _Bar(total, desc)
 
 
+
+
+# ===========================================================================================================
+# Memory estimate (issue C25): a crash from running out of RAM at hour 3 is the worst way to lose a run
+# ===========================================================================================================
+class MemoryBudgetError(RuntimeError):
+    pass
+
+
+def estimate_peak_bytes(n_tiles: int, n_columns: int, workers: int = 1, n_checkpoints: int = 4, chunk_rows: int = _S.DEFAULT_CHUNK_ROWS) -> int:
+    """Conservative estimate of the peak resident memory of one ``simulate`` call, all processes together.
+
+    Calibrated on a measured run (Apple M2, 4,000,000 tiles x 12 columns, 5 runs, 5 checkpoints, 1 worker: 866 MB resident at the peak, of which the Python
+    allocations were 452 MB plus the 192 MB feature matrix; the rest is allocator retention) and rounded up by 25%.
+
+    Terms: shared feature matrix ``n x k x 4``; parent: merged statistics 24 bytes a tile (mean and M2 float64, min and max float32), one uint16 x 3 counter
+    array per checkpoint segment, one block result in flight (statistics + counters), the summed counters, score vectors, sort and candidate temporaries, and the
+    results table (about a third of the tiles listed at 70 bytes a row when scores are very noisy); each extra worker: its own statistics, counters, score
+    vectors and the copy made when its block result is sent back.
+    """
+    x = n_tiles * n_columns * 4
+    parent = n_tiles * (24 + 6 * n_checkpoints + 30 + 6 + 16 + 8 + 24)
+    worker = n_tiles * (24 + 6 + 12 + 30) + chunk_rows * n_columns * 16
+    return int(1.25 * (x + parent + max(workers - 1, 0) * worker))
+
+
+def check_memory_budget(n_tiles: int, n_columns: int, workers: int, n_checkpoints: int, available_bytes: int, budget_bytes: int,
+                        chunk_rows: int = _S.DEFAULT_CHUNK_ROWS, log=print) -> int:
+    """Log the estimate; warn if it exceeds the doctor budget; raise if it exceeds the RAM that is free right now (the run could not finish)."""
+    need = estimate_peak_bytes(n_tiles, n_columns, workers, n_checkpoints, chunk_rows)
+    if need > available_bytes:
+        raise MemoryBudgetError(f"this Monte Carlo needs about {need / 1e6:,.0f} MB ({n_tiles:,} tiles, {workers} worker(s)) but only {available_bytes / 1e6:,.0f} MB are free: "
+                                "close other programs, use fewer workers, or run on a machine with more RAM")
+    if need > budget_bytes:
+        log(f"[mc] WARNING: estimated peak {need / 1e6:,.0f} MB is above the budget of {budget_bytes / 1e6:,.0f} MB reported by `gsop doctor`")
+    return need

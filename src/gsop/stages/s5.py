@@ -42,6 +42,14 @@ def memory_chunk_rows(cfg: Config, n_columns: int) -> int:
     return int(max(4096, min(S.DEFAULT_CHUNK_ROWS, budget)))
 
 
+def memory_numbers() -> tuple[int, int]:
+    """``(free RAM now, the budget `gsop doctor` prints)`` in bytes: the budget is 40% of free RAM (``chunk_ram_fraction``)."""
+    from gsop.doctor import collect
+
+    info = collect()
+    return int(info["ram_free_gb"] * 1e9), int(info["chunk"]["megabytes"] * 1e6)
+
+
 def _sigma_from_file(path: Path, target: str, setup: S.ScoreSetup) -> np.ndarray:
     table = json.loads(Path(path).read_text(encoding="utf-8"))["targets"].get(target)
     if table is None:
@@ -100,6 +108,8 @@ def run_simulate(cfg: Config, body: str, paths: Paths, runs: Optional[int] = Non
             if len(ts) == 0:
                 log(f"[s5] {key}: no tile passes this profile's gate, nothing to simulate")
                 continue
+            free, budget = memory_numbers()
+            MC.check_memory_budget(len(ts), len(setup.columns), workers, len(MC.scaled_checkpoints(params.runs, params.checkpoints)), free, budget, chunk_rows, log)
             t0 = time.perf_counter()
             result = MC.simulate(xs, ts, mcs, params, work_dir=out / ".mc_work" / f"{name}__{p}", workers=workers, chunk_rows=chunk_rows, log=log)
             tbl = result.table.copy()

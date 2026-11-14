@@ -299,6 +299,20 @@ First real values (2026-11-14): Jezero `slope_med` 0.85 deg (spread 0.37), `slop
 
 Definitions used instead of the Earth ones: `t_mean` = mean of the 6 Ls-bin means (each the mean over 24 subsolar-longitude files); `t_coldest` = the lowest Ls-bin mean (**about two months, not the coldest calendar month used on Earth**: a mismatch); `ti_proxy` = all-year swing of the local-time curve (1 h bins, max minus min), which replaces the Earth dry-season swing because the Moon has no rainy and dry seasons (a proxy, not thermal inertia). Bolometric brightness temperature is not kinetic temperature. Evidence grades: `t_mean`, `t_coldest` B (measured, different quantity from Earth LST), `ti_proxy` C. `silica_index` (Christiansen feature) is `unavailable` for the Moon targets: the polar product is bolometric only and the Christiansen feature needs narrow-band channels under suitable illumination, which the low polar Sun does not give.
 
+### Memory (issue C25)
+
+`simulate` never holds more than one block result in flight: block statistics are merged into the running totals as they arrive and then dropped.
+(The first version kept every block result until the end, about 1.9 GB at 2,000 runs on 4,000,000 tiles; found by measuring and fixed.)
+
+Measured on an Apple M2, 4,000,000 tiles x 12 columns, 5 runs, 1 worker: feature matrix 192 MB, peak resident memory added by the run 866 MB, 4 s.
+Python allocations were 452 MB of that; the rest is allocator retention. That run used random data, which puts about 1.35 million tiles in the results table, so it is a worst case for table size.
+`estimate_peak_bytes` is that measurement rounded up 25% and scaled by tiles, columns, checkpoints and extra workers (each extra worker adds its own statistics and counters).
+`gsop s5 simulate` compares the estimate with the free RAM and the `gsop doctor` chunk budget before every profile: not enough free RAM stops the run with `MemoryBudgetError`; only the budget being exceeded logs a warning.
+
+The slow test `tests/test_memory.py` runs the real 4,000,000-tile case and asserts the measured peak against the estimate and the budget. **It is skipped when the doctor budget is below the estimate**,
+as on the 16 GB development laptop with about 1.8 GB free; so the literal assertion has not been checked since the estimate was recalibrated. Run it with `--runslow` on a machine with more free RAM.
+The estimate for 8 workers is untested; worker count is the one knob that raises memory.
+
 ## Ledger and fidelity
 
 TODO (phase C). Limits ledger `config/ledger.yaml`, reported beside every score and never multiplied into it. `fidelity = 100 * mean(status_value over the ledger rows relevant to that purpose)`, Broken 0, Partly 0.5, Matchable 1. The relevance matrix is provisional until Anay and Vihaan review it.
