@@ -243,10 +243,23 @@ app.add_typer(s5, name="s5")
 
 
 @s5.command("simulate")
-def s5_simulate(body: Body = BodyOpt, runs: Optional[int] = RunsOpt, target_check: Optional[str] = TargetCheckOpt) -> None:
-    """Monte Carlo over weights and data."""
-    _runs(runs)
-    _stub("s5 simulate")
+def s5_simulate(body: Body = BodyOpt, runs: Optional[int] = RunsOpt, target_check: Optional[str] = TargetCheckOpt,
+                workers: Optional[int] = typer.Option(None, "--workers", help="Worker processes (default: physical cores). The result does not depend on it."),
+                force: bool = typer.Option(False, "--force", help="Rerun even if nothing changed.")) -> None:
+    """Monte Carlo over weights and data for every target x profile (resumable: per-profile markers and block-level partial results)."""
+    from gsop.config import load_config
+    from gsop.paths import Paths
+    from gsop.runner import Runner, RunnerError
+    from gsop.similarity import SetupError
+    from gsop.stages import s4, s5
+
+    cfg, paths = load_config(), Paths()
+    try:
+        stage = s5.stage(cfg, body.value, paths, _runs(runs), workers, target_check, log=typer.echo)
+        Runner(paths.results(body.value), cfg, body=body.value, runs=_runs(runs), base_dir=paths.root, log=typer.echo).run([stage], force=["s5"] if force else ())
+    except (SetupError, RunnerError, s4.ScoreError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
 
 
 s6 = typer.Typer(help="s6: ML second opinion.", no_args_is_help=True)

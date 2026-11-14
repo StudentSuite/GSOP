@@ -43,6 +43,9 @@ Profiles: Moon `base`, `landing_mobility`, `power_night`, `ice_resources`; Mars 
 
 | Column | Type | Meaning |
 |---|---|---|
+| `target`, `profile` | string | which target and purpose profile |
+| `confidence` | string, nullable | `low` for Mars `landing_mobility` and `power_night` |
+| `fails_own_gate`, `own_gate_reasons` | bool, string | the Mars target check (D6), see the top of this file |
 | `tile_id` | int64 | tile |
 | `mc_mean`, `mc_std` | float32 | mean and standard deviation of the score over the runs |
 | `freq_top1`, `freq_top5`, `freq_top10` | float32 | share of runs in which the tile was in the top 1%, 5%, 10% of gated tiles |
@@ -50,5 +53,7 @@ Profiles: Moon `base`, `landing_mobility`, `power_night`, `ice_resources`; Mars 
 | `is_candidate` | bool | one of the top 3% by mean score or by `freq_top5`; only candidates have the next six columns (NaN otherwise) |
 | `mc_median`, `mc_p05`, `mc_p95` | float32 | exact percentiles of the score over the runs |
 | `rank_pct_p05`, `rank_pct_p50`, `rank_pct_p95` | float32 | rank percentile among all gated tiles of the run (100 x share of tiles with a strictly lower score), 5th, 50th, 95th percentile over the runs |
+
+`mc_summary.json`: per `target/profile` timings (pass 1 and pass 2 seconds, runs, tiles, workers, blocks, candidates, robust count) for the time budget.
 
 `convergence.json`: for every target and profile, the Jaccard overlap between the top-1% set after the first 500, 1,000, 1,500 and 2,000 runs (scaled for other run counts) and the final set.
