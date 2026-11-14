@@ -378,6 +378,21 @@ MODIS_LANDCOVER_ID = "MODIS/061/MCD12Q1"
 MODIS_NDVI_ID = "MODIS/061/MOD13A2"
 
 
+def land_band(ee: Any, cfg: Config) -> Any:
+    """Band ``land_frac``: share of 500 m MCD12Q1 cells that are land (``LW`` == 2) in the tile (issue B18)."""
+    lc_cfg = cfg.features.land_cover
+    ops = cfg.features.operators
+    lw = (
+        ee.ImageCollection(MODIS_LANDCOVER_ID)
+        .filterDate(f"{lc_cfg['year']}-01-01", f"{lc_cfg['year'] + 1}-01-01")
+        .first()
+        .select("LW")
+    )
+    return lw.eq(2).toFloat().rename("land_frac").reduceResolution(
+        reducer=ee.Reducer.mean(), maxPixels=int(round(ops.tile_m / 500.0)) ** 2 + 32
+    )
+
+
 def gate_bands(ee: Any, cfg: Config) -> Any:
     """Bands ``gate_water_ice_frac``, ``gate_ndvi_med``, ``gate_built_crop_frac`` at 6 km. No thresholds applied.
 
@@ -456,6 +471,7 @@ FEATURE_BUILDERS: list[tuple[str, Callable[[Any, Config], Any], list[str]]] = [
     ("dust", dust_bands, ["dust_index_raw"]),
     ("silica", silica_bands, ["silica_index"]),
     ("gates", gate_bands, ["gate_water_ice_frac", "gate_ndvi_med", "gate_built_crop_frac"]),
+    ("land", land_band, ["land_frac"]),
 ]
 
 

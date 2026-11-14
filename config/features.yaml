@@ -123,6 +123,12 @@ earth_export:
   drive_folder: gsop_earth
   cloud_bucket: null          # set only with destination: cloud_storage
 
+# Building earth_features_6km.parquet from the exported rasters (issue B18).
+earth_build:
+  land_min_fraction: 0.5      # TUNABLE, NOT SOURCED: a tile is land when at least this share of its 500 m cells is land (MCD12Q1 LW)
+  nan_warn_fraction: 0.2      # TUNABLE: a feature with more than this share of land tiles missing is reported loudly
+  dust_percentiles: [1, 99]   # dust_index_raw is scaled to 0..1 between these percentiles over land tiles (gsop.dust)
+
 features:
   slope_med:
     definition: "Median over the 6 km tile of slope computed at one shared 500 m baseline"

@@ -324,6 +324,7 @@ class Features:
     air_density: dict[str, Any]
     land_cover: dict[str, Any]
     earth_export: dict[str, Any]
+    earth_build: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -643,7 +644,7 @@ def _parse_ledger(raw: Any, purposes: dict, w: _Warn) -> Ledger:
 def _parse_features(raw: Any, w: _Warn) -> Features:
     f = "features.yaml"
     raw = _map(raw, f)
-    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature", "water_index", "silica_index", "air_density", "land_cover", "earth_export"), f)
+    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature", "water_index", "silica_index", "air_density", "land_cover", "earth_export", "earth_build"), f)
     ow = f"{f}: operators"
     op = _map(_need(raw, "operators", f), ow)
     w.unknown(op, ("grid_crs", "tile_m", "baseline_m", "slope_method", "max_nan_fraction", "earth_dem"), ow)
@@ -759,6 +760,14 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
     _str(_need(ex, "drive_folder", xw), f"{xw}.drive_folder")
     if destination == "cloud_storage" and not ex.get("cloud_bucket"):
         _fail(f"{xw}.cloud_bucket", "required when destination is cloud_storage")
+    bw2 = f"{f}: earth_build"
+    eb = _map(_need(raw, "earth_build", f), bw2)
+    w.unknown(eb, ("land_min_fraction", "nan_warn_fraction", "dust_percentiles"), bw2)
+    _num(_need(eb, "land_min_fraction", bw2), f"{bw2}.land_min_fraction", lo=0, hi=1)
+    _num(_need(eb, "nan_warn_fraction", bw2), f"{bw2}.nan_warn_fraction", lo=0, hi=1)
+    dp = _list(_need(eb, "dust_percentiles", bw2), f"{bw2}.dust_percentiles")
+    if len(dp) != 2 or not 0 <= _num(dp[0], f"{bw2}.dust_percentiles[0]") < _num(dp[1], f"{bw2}.dust_percentiles[1]") <= 100:
+        _fail(f"{bw2}.dust_percentiles", "must be [low, high] with 0 <= low < high <= 100")
     cols: dict[str, Feature] = {}
     known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy", "availability")
     for name, spec in _map(_need(raw, "features", f), f"{f}: features").items():
@@ -811,7 +820,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         spec = _map(spec, where)
         _str(_need(spec, "definition", where), f"{where}.definition")
         layers[name] = dict(spec)
-    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature, water_index=water_index, silica_index=silica, air_density=ad, land_cover=lc, earth_export=ex)
+    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature, water_index=water_index, silica_index=silica, air_density=ad, land_cover=lc, earth_export=ex, earth_build=eb)
 
 
 def _parse_run(raw: Any, w: _Warn) -> RunConfig:

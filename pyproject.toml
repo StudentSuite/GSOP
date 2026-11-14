@@ -40,3 +40,6 @@ pythonpath = ["tests"]
 markers = [
     "slow: long-running test, skipped unless you pass --runslow",
 ]
+filterwarnings = [
+    "ignore::PendingDeprecationWarning:rasterio.*",
+]

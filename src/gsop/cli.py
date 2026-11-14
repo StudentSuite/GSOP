@@ -92,6 +92,9 @@ def s2_earth(
         None, "--region", help="Test region 'west,south,east,north' in degrees instead of the whole globe."
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="List chunks and bands without starting any export."),
+    build_from: Optional[Path] = typer.Option(
+        None, "--build-from", help="Folder of downloaded chunk GeoTIFFs: build data/processed/earth_features_6km.parquet and grid.json from them."
+    ),
 ) -> None:
     """Build data/processed/earth_features_6km.parquet (Earth Engine route: start/poll the chunk exports)."""
     if source is not EarthSource.gee:
@@ -100,6 +103,17 @@ def s2_earth(
     from gsop.earth import gee_export
 
     cfg = load_config()
+    if build_from is not None:
+        from gsop.earth import build_parquet
+
+        rasters = sorted(Path(build_from).glob("*.tif"))
+        if not rasters:
+            typer.echo(f"no .tif files in {build_from}", err=True)
+            raise typer.Exit(1)
+        out = Path(__file__).resolve().parents[2] / "data" / "processed"
+        build_parquet.build_earth_parquet(rasters, cfg, out, log=typer.echo)
+        typer.echo(f"round-trip check: {len(build_parquet.roundtrip_check(out / 'earth_features_6km.parquet', rasters, cfg))} random tiles match their rasters")
+        return
     box = None
     if region is not None:
         try:

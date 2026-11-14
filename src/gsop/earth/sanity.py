@@ -23,6 +23,7 @@ SANITY_RANGES: dict[str, tuple[float | None, float | None, str]] = {
     "dryness": (0.0, 1.0, "index 0-1"),
     "dust_index_raw": (0.0, 5.0, "aerosol optical thickness, non-negative"),
     "silica_index": (0.0, 5.0, "quartz index, positive ratio of emissivities near 1"),
+    "land_frac": (0.0, 1.0, "fraction"),
     "gate_water_ice_frac": (0.0, 1.0, "fraction"),
     "gate_ndvi_med": (-1.0, 1.0, "NDVI"),
     "gate_built_crop_frac": (0.0, 1.0, "fraction"),
