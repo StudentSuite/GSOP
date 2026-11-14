@@ -132,7 +132,12 @@ Horn (1981) 3 x 3 finite difference on the 500 m grid. With neighbours
 
 `slope_med` is the median and `slope_p90` the 90th percentile of the slopes of the (up to 144) 500 m cells in the tile. The numpy percentile uses linear interpolation; Earth Engine's `percentile` reducer is histogram based, so small differences are expected (the 10% tolerance of `gsop check-operators` covers them). A tile with more than `max_nan_fraction` (0.2, tunable and unsourced) of its cells missing is NaN: a partial answer is never returned.
 
-### Relief
+### numpy implementation and edge handling (issue B22)
+
+`src/gsop/operators.py`: `baseline_factor`, `effective_baseline_m`, `block_mean`, `horn_slope_deg`, `plane_rms`, `tile_features(dem, cell_m, *, tile_m, baseline_m, rough_baselines_m, stride_m, max_nan_fraction)`. Inputs: a 2-D DEM (row 0 at the north), the **metric** cell size `cell_m` (square cells; give the metric size for geographic or polar grids, so LOLA, MOLA and Earth tiles all go through the same code), and values from `config/features.yaml`. Cell [0, 0] of the array must sit on a tile corner; tiles are `tile_m` squares `stride_m` apart (`tile_m` on the global grid, 3000 m for the Moon and Mars target windows). The result is one array per feature of shape `(tile rows, tile columns)` plus the baselines actually used.
+
+Edge handling: (1) the outer border of the slope grid is NaN (no 3 x 3 neighbourhood); (2) a slope cell with any NaN neighbour is NaN; (3) a ragged edge that does not fill a block or a tile is dropped; (4) a tile with more than `max_nan_fraction` missing cells is NaN for that feature, so a tile at the array border keeps its slope only while the lost border cells stay under that share (callers read windows with a one-cell halo of baseline cells to avoid it); (5) roughness tiles without missing cells use the same closed form as Earth Engine; tiles with some missing cells (within the limit) use a least-squares plane on the valid cells.
+
 
 `relief` is the maximum minus the minimum of the 500 m cells (block means, Step 2) inside the tile. Same missing-cell rule as slope.
 
