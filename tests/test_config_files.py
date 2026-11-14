@@ -484,3 +484,19 @@ def test_provenance_table_columns_and_no_invented_ids():
 def test_readme_states_the_no_invention_rule():
     readme = (DOCS.parent / "README.md").read_text(encoding="utf-8")
     assert "an unverified item is allowed, an undocumented one is not" in readme
+
+
+# --- A02: docs/source ---------------------------------------------------------
+def test_source_docs_are_present_and_linked():
+    import hashlib
+
+    src = DOCS / "source"
+    expected = {
+        "GSOP_claude_code_setup_prompt.md": "0fabd698c77f128e8fb8c261202ff678768bde9c1a0dea4278e1bc2f92c4e3d9",
+        "GSOP_combined_-_plan__weights_and_evidence.md": "3ff2e1d32edcb13a2da3b270c0f24d60ba0c4b766a50b20c5c8edbaca37d7a5a",
+    }
+    for name, sha in expected.items():
+        assert hashlib.sha256((src / name).read_bytes()).hexdigest() == sha, name
+    readme = (DOCS.parent / "README.md").read_text(encoding="utf-8")
+    assert all(f"docs/source/{n}" in readme for n in expected)
+    assert "The setup prompt wins" in (src / "README.md").read_text(encoding="utf-8")

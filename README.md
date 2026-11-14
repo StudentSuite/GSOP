@@ -6,6 +6,7 @@ GSOP (Geospatial Similarity Observation Platform) scores every 6 km land tile on
 
 ## Documentation
 
+- [docs/source/GSOP_claude_code_setup_prompt.md](docs/source/GSOP_claude_code_setup_prompt.md) and [docs/source/GSOP_combined_-_plan__weights_and_evidence.md](docs/source/GSOP_combined_-_plan__weights_and_evidence.md): the source of truth ([which one wins](docs/source/README.md)).
 - [docs/SPEC.md](docs/SPEC.md): the specification, one section per pipeline stage s1 to s9.
 - [docs/DECISIONS.md](docs/DECISIONS.md): decisions D1 to D10, made by Anay.
 
