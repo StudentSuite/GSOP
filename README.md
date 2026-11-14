@@ -53,3 +53,7 @@ uv run python scripts/ee_probe.py --check-raster path/to/gsop_earth_region_r00_c
 ```
 
 `--check-raster` prints one row per band (valid share, min, median, max) and exits 1 on a wrong CRS, a pixel size other than 6000 m, missing or unexpected bands, an all-empty band or values outside plausibility bounds. Write the wall time and the file size on issue B17 and decide go or no-go for the global export. Note that `water_index` is left out until Anay decides (see `docs/SPEC.md`), so the checker expects it to be absent.
+
+## Provenance audit
+
+`uv run python scripts/audit_provenance.py` checks that every feature column, every row of `data/processed/targets_*.parquet` and every column of the Earth file traces to an entry in `docs/PROVENANCE.md` or `docs/UNVERIFIED.md`. It prints only what is missing and exits 1 if anything is. CI runs it as a warning-only step.
