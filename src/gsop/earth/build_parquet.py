@@ -60,11 +60,11 @@ class GridInfo:
 
 
 def global_grid(cfg: Config) -> GridInfo:
-    chunks = G.plan_chunks(cfg)
-    tile = int(cfg.features.operators.tile_m)
-    x0, x1 = min(c.x0 for c in chunks), max(c.x1 for c in chunks)
-    y0, y1 = min(c.y0 for c in chunks), max(c.y1 for c in chunks)
-    return GridInfo(x0, y1, (x1 - x0) // tile, (y1 - y0) // tile, tile)
+    """The global lattice (see ``gsop.grid.Grid``); kept as a small tuple for the parquet build."""
+    from gsop.grid import Grid
+
+    g = Grid.from_config(cfg)
+    return GridInfo(g.x0, g.y_top, g.nx, g.ny, g.tile_m)
 
 
 def _read_band(ds, name: str, window) -> np.ndarray:

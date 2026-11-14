@@ -24,7 +24,13 @@ Each section below says which pipeline stage it belongs to. A stage with no text
 
 ## Grid (s1)
 
-TODO (phase B). Fixed by decision D1: 6 km x 6 km tiles on the equal-area grid EPSG:6933 (6000 m cells), land only, polar ice gated out.
+Decision D1: 6 km x 6 km tiles on the equal-area grid EPSG:6933 (6000 m cells), land only, polar ice gated out. `src/gsop/grid.py` defines it once.
+
+- **Origin and extent.** The grid is the extent of the whole globe (longitude -180 to 180, latitude -90 to 90 projected to EPSG:6933) snapped *outward* to multiples of 6000 m: west edge `x0`, north edge `y_top`, `nx` columns, `ny` rows (about 5.8 thousand by 2.4 thousand, about 14 million cells, of which about 4 million are land; the exact numbers are in `grid.json`). It is the same lattice the Earth Engine export uses (tested).
+- **Tile id.** `tile_id = iy * nx + ix` as int64, with `iy` counted from the north edge and `ix` from the west edge; the inverse is exact. Centroid longitude and latitude come from the projection inverse (pyproj), polygons are built on demand.
+- **Edges.** A longitude is wrapped into [-180, 180), so a point exactly on the antimeridian goes to the western edge tile; the poles belong to the first and last row; points beyond +-90 degrees or non-finite give id -1.
+- **Equal area.** EPSG:6933 is cylindrical equal-area, so every cell has the same true area on the WGS84 ellipsoid (36 km2) at every latitude, but cells are squares only in projected space (tested against a geodesic area on densified polygons, within 0.2%).
+- **Distance.** The haversine helper uses the mean Earth radius 6371.0088 km and is used only for the 20 km site matching and the 100 km novelty radius (not for tile geometry).
 
 ## Features (s2)
 
