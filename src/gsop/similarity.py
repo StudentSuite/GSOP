@@ -167,3 +167,86 @@ def renormalise(weights: dict[str, float], families: Sequence[str]) -> np.ndarra
     """Weights of the kept families as a vector summing to 1."""
     w = np.array([weights[f] for f in families], dtype="float64")
     return w / w.sum()
+
+
+# ===========================================================================================================
+# The sigma rule (issue C08)
+#   sigma_k = max(target_spread_k, measurement_uncertainty_k, multiplier * IQR_k over the gated Earth tiles)
+# The IQR term stops the score collapsing to zero everywhere for variables Earth cannot match (polar lighting).
+# ===========================================================================================================
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+_WARNED: set = set()
+
+
+@dataclass(frozen=True)
+class SigmaTerms:
+    column: str
+    sigma: float
+    target_spread: float
+    measurement_uncertainty: float
+    iqr_term: float
+    winner: str  # which of the three terms set sigma: "target_spread" | "measurement_uncertainty" | "iqr"
+
+
+def measurement_uncertainty(cfg: Config, body: str, column: str) -> float:
+    """Measurement-uncertainty floor of ``column``: the larger of the sourced target-side and Earth-side values (``max`` of each range).
+
+    A ``TODO`` entry contributes 0. If neither side has a sourced value the result is 0 and a warning is logged once per column and body
+    (the IQR term then carries the sigma).
+    """
+    feat = cfg.features.columns.get(column)
+    if feat is None:
+        raise ConfigError(f"features.yaml: unknown column '{column}'")
+    sourced = []
+    for side in (body, "earth"):
+        entry = feat.uncertainty.get(side)
+        if isinstance(entry, dict):
+            sourced.append(float(entry["max"]))
+    if not sourced:
+        key = (body, column)
+        if key not in _WARNED:
+            _WARNED.add(key)
+            log.warning("no sourced measurement uncertainty for %s on %s or on Earth (TODO in features.yaml): using 0, the IQR term carries sigma", column, body)
+        return 0.0
+    return max(sourced)
+
+
+def compute_sigma(column: str, target_spread: float, meas_unc: float, earth_values_gated, iqr_multiplier: float = 0.25) -> SigmaTerms:
+    """``max(target_spread, meas_unc, iqr_multiplier * IQR)`` with the IQR taken over the finite values of the **gated** Earth tiles only."""
+    v = np.asarray(earth_values_gated, dtype="float64")
+    v = v[np.isfinite(v)]
+    iqr = float(np.subtract(*np.percentile(v, [75, 25]))) if v.size else 0.0
+    iqr_term = iqr_multiplier * iqr
+    spread = 0.0 if not np.isfinite(target_spread) else float(target_spread)
+    terms = {"target_spread": spread, "measurement_uncertainty": float(meas_unc), "iqr": iqr_term}
+    winner = max(terms, key=lambda k: terms[k])  # first listed wins a tie
+    sigma = max(terms[winner], SIGMA_MIN)
+    if terms[winner] < SIGMA_MIN:
+        log.warning("sigma for %s is 0 (all three terms are 0); using %g", column, SIGMA_MIN)
+    return SigmaTerms(column, sigma, spread, float(meas_unc), iqr_term, winner)
+
+
+def build_sigma_table(cfg: Config, setup: ScoreSetup, earth_gated: "dict | object") -> dict[str, SigmaTerms]:
+    """Sigma for every column of ``setup``. ``earth_gated`` maps column name to the values of the gated Earth tiles (a DataFrame works)."""
+    return {
+        c: compute_sigma(c, float(setup.target_spread[i]), measurement_uncertainty(cfg, setup.body, c), earth_gated[c], cfg.run.sigma_iqr_multiplier)
+        for i, c in enumerate(setup.columns)
+    }
+
+
+def sigma_vector(setup: ScoreSetup, table: dict[str, SigmaTerms]) -> np.ndarray:
+    return np.array([table[c].sigma for c in setup.columns], dtype="float64")
+
+
+def write_sigma_table(path: Path, tables: dict[str, dict[str, SigmaTerms]], multiplier: float) -> Path:
+    """Write ``sigma_table.json``: for every target, each column's sigma and the three terms that competed for it."""
+    from dataclasses import asdict
+
+    from gsop.atomic import atomic_write_text
+
+    payload = {"rule": "sigma_k = max(target_spread_k, measurement_uncertainty_k, iqr_multiplier * IQR_k over gated Earth tiles)",
+               "iqr_multiplier": multiplier,
+               "targets": {t: {c: asdict(terms) for c, terms in cols.items()} for t, cols in tables.items()}}
+    return atomic_write_text(Path(path), json.dumps(payload, indent=2) + "\n")

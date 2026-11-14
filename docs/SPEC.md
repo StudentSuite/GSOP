@@ -178,7 +178,12 @@ TODO (phase C). Thresholds are in `config/gates.yaml`; the landing_mobility extr
 
 ## Sigma rule (s4)
 
-TODO (phase C). `sigma_k = max(target_spread_k, measurement_uncertainty_k, 0.25 * IQR_of_k_across_all_gated_Earth_tiles)`.
+`compute_sigma` in `src/gsop/similarity.py`: `sigma_k = max(target_spread_k, measurement_uncertainty_k, m * IQR_k)` with `m = sigma_iqr_multiplier` (0.25, `config/run.yaml`) and `IQR_k` the interquartile range of column `k` over the finite values of the **gated** Earth tiles of that target. The IQR term stops the score collapsing to 0 everywhere for variables Earth cannot match (polar lighting): without it a tile 20 target-spreads away on illumination would score 0 for every tile on Earth.
+
+- **`target_spread`**: IQR / 1.349 of the target's window tiles (the target profile).
+- **`measurement_uncertainty`**: the larger of the sourced target-side and sourced Earth-side floors in `config/features.yaml` (the `max` of each range, the conservative end; today only Moon slope, relief, roughness from Barker 2021, Mars relief and roughness from MOLA, and Earth `t_mean` and `t_coldest` from the MODIS QC classes). A `TODO` contributes 0; if both sides are `TODO` the value is 0 and one warning per column and body is logged, and the IQR term carries the sigma.
+- **Guard**: if all three terms are 0 (a constant column) sigma is 1e-9 and a warning is logged, so the similarity never divides by zero.
+- `sigma_table.json` (written by s4) lists, for every target and column, the sigma and the three terms with the winner, so the choice is visible.
 
 ## Weights (s4)
 
