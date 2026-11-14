@@ -65,3 +65,71 @@ def sample_weights(mcs: MCSetup, i: int, return_raw: bool = False):
     w = w * mcs.multipliers
     w = w / w.sum()
     return (w, raw) if return_raw else w
+
+
+# ===========================================================================================================
+# Data jitter (issue C16)
+#   target value_k  ~ N(value_k, target measurement uncertainty_k)         (target side, features.yaml uncertainty.<body>.max)
+#   Earth value_k   + b_k,  b_k ~ N(0, Earth systematic bias_k)            (features.yaml earth_bias.max)
+# (x + b - t') / sigma = (x - (t' - b)) / sigma, so both terms are ONE shift of the target value per column: shift_k = e_k - b_k.
+# Columns whose uncertainty or bias is TODO are not jittered (sd 0); that is logged once per column.
+# Not jittered: sigma (fixed per column, see the sigma rule), the weights' ranges, and per-tile noise (see below).
+# ===========================================================================================================
+_JITTER_WARNED: set = set()
+#: Per-tile noise for candidate tiles only (the issue's optional term) is NOT implemented: it would make pass 2 scores differ from pass 1 scores for
+#: the same run, which pass 2 must not do. The parameter is kept at 0 and documented in SPEC.md.
+CANDIDATE_TILE_NOISE_SD = 0.0
+
+
+def target_uncertainty_sd(cfg: Config, body: str, column: str) -> float:
+    """sd of the target-value jitter: the sourced target-side measurement uncertainty (``max`` of the range); 0 and one warning if TODO."""
+    entry = cfg.features.columns[column].uncertainty.get(body)
+    if isinstance(entry, dict):
+        return float(entry["max"])
+    key = ("target", body, column)
+    if key not in _JITTER_WARNED:
+        _JITTER_WARNED.add(key)
+        log.warning("target value of %s on %s has no sourced uncertainty (TODO): not jittered", column, body)
+    return 0.0
+
+
+def earth_bias_sd(cfg: Config, column: str) -> float:
+    """sd of the Earth systematic bias of ``column``: the sourced ``earth_bias`` (``max``); 0 and one warning if TODO."""
+    entry = cfg.features.columns[column].earth_bias
+    if isinstance(entry, dict):
+        return float(entry["max"])
+    key = ("earth_bias", column)
+    if key not in _JITTER_WARNED:
+        _JITTER_WARNED.add(key)
+        log.warning("Earth systematic bias of %s has no sourced estimate (TODO): not jittered", column)
+    return 0.0
+
+
+def make_mc_setup(cfg: Config, setup: ScoreSetup, profile: str, master_seed: Optional[int] = None) -> MCSetup:
+    """Monte Carlo set-up for one target and one profile from a ``ScoreSetup`` whose sigma is already filled in."""
+    if np.isnan(setup.sigma).any():
+        raise ValueError("the ScoreSetup has no sigma yet: run the sigma rule first (ScoreSetup.with_sigma)")
+    fam_cfg = cfg.weights(setup.body)
+    mult = cfg.purposes(setup.body)[profile].multipliers
+    return MCSetup(
+        body=setup.body, target=setup.target, profile=profile, columns=setup.columns, families=setup.families, family_cols=setup.family_cols,
+        target_values=setup.target_values, sigma=setup.sigma,
+        weight_lo=np.array([fam_cfg[f].range[0] for f in setup.families], dtype="float64"),
+        weight_hi=np.array([fam_cfg[f].range[1] for f in setup.families], dtype="float64"),
+        multipliers=np.array([mult.get(f, 1.0) for f in setup.families], dtype="float64"),
+        target_unc=np.array([target_uncertainty_sd(cfg, setup.body, c) for c in setup.columns], dtype="float64"),
+        earth_bias_sd=np.array([earth_bias_sd(cfg, c) for c in setup.columns], dtype="float64"),
+        master_seed=cfg.run.seed if master_seed is None else int(master_seed),
+    )
+
+
+def sample_data_shift(mcs: MCSetup, i: int) -> np.ndarray:
+    """The per-column shift of the target value in run ``i``: ``target_jitter - earth_bias``. Always draws both normals so the stream is stable."""
+    rng = np.random.default_rng(run_seed(mcs.master_seed, i, DATA_STREAM))
+    z = rng.normal(size=(2, len(mcs.columns)))
+    return z[0] * mcs.target_unc - z[1] * mcs.earth_bias_sd
+
+
+def run_params(mcs: MCSetup, i: int) -> tuple[np.ndarray, np.ndarray]:
+    """``(weights (F,), jittered target values (K,))`` of run ``i``."""
+    return sample_weights(mcs, i), mcs.target_values + sample_data_shift(mcs, i)
