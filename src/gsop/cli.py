@@ -63,9 +63,15 @@ def _runs(runs: Optional[int]) -> int:
 
 
 @app.command()
-def doctor() -> None:
+def doctor(
+    json_path: Optional[Path] = typer.Option(
+        None, "--json", help="Also write the report to this JSON file."
+    ),
+) -> None:
     """Report OS, cores, RAM, disk, package versions and the safe chunk size."""
-    _stub("doctor")
+    from gsop.doctor import run_doctor
+
+    run_doctor(json_path)
 
 
 # --- s1 -------------------------------------------------------------------
