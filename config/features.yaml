@@ -17,6 +17,19 @@
 #                               TODO means no source yet: the IQR term then carries the sigma. The sigma code
 #                               takes `max` from a sourced range (the conservative end); that choice is listed
 #                               in docs/UNVERIFIED.md.
+# Terrain operator settings, shared by the Earth Engine path and numpy `operators.py` (docs/SPEC.md, Operators).
+operators:
+  grid_crs: "EPSG:6933"       # decision D1: equal-area grid
+  tile_m: 6000                # decision D1: 6 km tiles
+  baseline_m: 500             # one shared baseline for slope and relief on Earth, Moon and Mars
+  slope_method: horn          # Horn (1981) 3x3 finite difference; see SPEC for why
+  max_nan_fraction: 0.2       # TUNABLE, NOT SOURCED: a tile with more than this share of missing cells is NaN
+  earth_dem:
+    # NASADEM (verified in docs/PROVENANCE.md: catalog bounding box -56 to 60 latitude) is used inside this
+    # latitude range, Copernicus GLO-30 outside it. Setup prompt says "56S to 60N" and "Copernicus above
+    # 60N"; south of 56S has no SRTM, so Copernicus is used there too (documented deviation, see SPEC).
+    nasadem_lat_range: [-56, 60]
+
 features:
   slope_med:
     definition: "Median over the 6 km tile of slope computed at one shared 500 m baseline"

@@ -32,7 +32,41 @@ TODO (phases B and C). Columns, sources and uncertainty floors are in `config/fe
 
 ## Operators (s2)
 
-TODO (phase B). One documented numpy operator for slope, relief and roughness on Earth, Moon and Mars (`src/gsop/operators.py`). If Earth Engine computes the Earth side, the matching operator is implemented there and `gsop check-operators` compares the two.
+One terrain operator is used for slope, relief and roughness on Earth, Moon and Mars. It is implemented twice, in numpy (`src/gsop/operators.py`, issue B22) and in Earth Engine (`src/gsop/earth/gee_export.py`), and `gsop check-operators` compares the two. Settings are in `config/features.yaml`, block `operators`.
+
+### Grid and tiles
+
+Tiles are 6000 m x 6000 m cells of the equal-area grid EPSG:6933 (decision D1), aligned to the projection origin, so a tile boundary falls at a multiple of 6000 m. The terrain baseline is 500 m, and 6000 / 500 = 12 exactly, so a tile is a 12 x 12 block of 500 m cells. For Moon and Mars target windows the same tile is used with a stride of 3 km (half a tile), so tiles overlap.
+
+### Step 1: DEM source (Earth only)
+
+Inside the latitude range `nasadem_lat_range` (-56 to 60 degrees) the elevation is NASADEM (`NASA/NASADEM_HGT/001`, band `elevation`); outside it, Copernicus GLO-30 (`COPERNICUS/DEM/GLO30_2024_1`, band `DEM`). The switch is a **hard cut** at the configured latitudes with no blending. Deviation from the setup prompt: it says "NASADEM between 56S and 60N, Copernicus above 60N" and says nothing south of 56S, where SRTM does not exist (Antarctica, so McMurdo needs it); Copernicus is used there too. The vertical datums differ (EGM96 vs EGM2008, see `docs/PROVENANCE.md`); slope and relief use height differences, so a constant offset cancels. Issue B07 tests the seam.
+
+### Step 2: resample to the 500 m baseline
+
+Block mean: each 500 m cell is the mean of the native cells inside it (Earth Engine: `reduceResolution(mean)` then `reproject(EPSG:6933, scale=500)`; numpy: mean over `factor x factor` native cells, `factor = round(500 / native_cell_m)`, at least 1). If the native cell is coarser than 500 m (Mars MOLA is about 463 m), the factor is 1 and the **effective baseline is the native cell size**; it is reported, never hidden.
+
+### Step 3: slope
+
+Horn (1981) 3 x 3 finite difference on the 500 m grid. With neighbours
+
+    a b c
+    d e f
+    g h i
+
+    dz/dx = ((c + 2f + i) - (a + 2d + g)) / (8 * dx)
+    dz/dy = ((g + 2h + i) - (a + 2b + c)) / (8 * dy)
+    slope = atan( sqrt( dz/dx^2 + dz/dy^2 ) )   in degrees
+
+`dx` and `dy` are the 500 m cell size in metres. Horn weights the nearer neighbours double and averages three finite differences, which makes it less sensitive to single-cell noise than a plain central difference; it is also the usual choice for DEM slope, so Moon and Mars tools agree with it. A cell with **any missing cell in its 3 x 3 neighbourhood has no slope** (masked in Earth Engine, NaN in numpy). The slope grid is computed over the whole DEM window first and cut into tiles afterwards, so cells on a tile border use their neighbours in the next tile (callers read windows with a one-cell halo).
+
+### Step 4: reduce to the tile
+
+`slope_med` is the median and `slope_p90` the 90th percentile of the slopes of the (up to 144) 500 m cells in the tile. The numpy percentile uses linear interpolation; Earth Engine's `percentile` reducer is histogram based, so small differences are expected (the 10% tolerance of `gsop check-operators` covers them). A tile with more than `max_nan_fraction` (0.2, tunable and unsourced) of its cells missing is NaN: a partial answer is never returned.
+
+### Relief, roughness
+
+Added by issues B06 and B22 (same sections).
 
 ## Gates (s3)
 

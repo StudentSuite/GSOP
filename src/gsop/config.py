@@ -261,9 +261,20 @@ class Feature:
 
 
 @dataclass(frozen=True)
+class OperatorSettings:
+    grid_crs: str
+    tile_m: float
+    baseline_m: float
+    slope_method: str
+    max_nan_fraction: float
+    nasadem_lat_range: tuple[float, float]
+
+
+@dataclass(frozen=True)
 class Features:
     columns: dict[str, Feature]
     gate_layers: dict[str, dict[str, Any]]
+    operators: OperatorSettings
 
 
 @dataclass(frozen=True)
@@ -583,7 +594,29 @@ def _parse_ledger(raw: Any, purposes: dict, w: _Warn) -> Ledger:
 def _parse_features(raw: Any, w: _Warn) -> Features:
     f = "features.yaml"
     raw = _map(raw, f)
-    w.unknown(raw, ("features", "gate_layers"), f)
+    w.unknown(raw, ("features", "gate_layers", "operators"), f)
+    ow = f"{f}: operators"
+    op = _map(_need(raw, "operators", f), ow)
+    w.unknown(op, ("grid_crs", "tile_m", "baseline_m", "slope_method", "max_nan_fraction", "earth_dem"), ow)
+    dem = _map(_need(op, "earth_dem", ow), f"{ow}.earth_dem")
+    w.unknown(dem, ("nasadem_lat_range",), f"{ow}.earth_dem")
+    lat_range = _list(_need(dem, "nasadem_lat_range", f"{ow}.earth_dem"), f"{ow}.earth_dem.nasadem_lat_range")
+    if len(lat_range) != 2:
+        _fail(f"{ow}.earth_dem.nasadem_lat_range", "must be [south, north]")
+    south = _num(lat_range[0], f"{ow}.earth_dem.nasadem_lat_range[0]", lo=-90, hi=90)
+    north = _num(lat_range[1], f"{ow}.earth_dem.nasadem_lat_range[1]", lo=-90, hi=90)
+    if not south < north:
+        _fail(f"{ow}.earth_dem.nasadem_lat_range", f"south {south} must be below north {north}")
+    operators = OperatorSettings(
+        grid_crs=_str(_need(op, "grid_crs", ow), f"{ow}.grid_crs"),
+        tile_m=_num(_need(op, "tile_m", ow), f"{ow}.tile_m", lo=1),
+        baseline_m=_num(_need(op, "baseline_m", ow), f"{ow}.baseline_m", lo=1),
+        slope_method=_choice(_need(op, "slope_method", ow), ("horn",), f"{ow}.slope_method"),
+        max_nan_fraction=_num(_need(op, "max_nan_fraction", ow), f"{ow}.max_nan_fraction", lo=0, hi=1),
+        nasadem_lat_range=(south, north),
+    )
+    if abs(operators.tile_m / operators.baseline_m - round(operators.tile_m / operators.baseline_m)) > 1e-9:
+        _fail(ow, f"tile_m {operators.tile_m} must be a whole multiple of baseline_m {operators.baseline_m}")
     cols: dict[str, Feature] = {}
     known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy", "availability")
     for name, spec in _map(_need(raw, "features", f), f"{f}: features").items():
@@ -636,7 +669,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         spec = _map(spec, where)
         _str(_need(spec, "definition", where), f"{where}.definition")
         layers[name] = dict(spec)
-    return Features(columns=cols, gate_layers=layers)
+    return Features(columns=cols, gate_layers=layers, operators=operators)
 
 
 def _parse_run(raw: Any, w: _Warn) -> RunConfig:

@@ -1,3 +1,10 @@
+operators:
+  grid_crs: "EPSG:6933"
+  tile_m: 6000
+  baseline_m: 500
+  slope_method: horn
+  max_nan_fraction: 0.2
+  earth_dem: {nasadem_lat_range: [-56, 60]}
 features:
   slope_med:
     definition: "median slope at 500 m"
