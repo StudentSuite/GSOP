@@ -1,0 +1,24 @@
+features:
+  slope_med:
+    definition: "median slope at 500 m"
+    units: deg
+    sources: {earth: {name: "DEM", lead: true}, moon: {name: LOLA}, mars: {name: MOLA}}
+    evidence_grade: A
+    uncertainty:
+      moon: {min: 1.5, max: 2.5, unit: deg, source: "Barker 2021"}
+      earth: TODO
+  slope_p90:
+    definition: "90th percentile slope at 500 m"
+    units: deg
+    sources: {earth: {name: "DEM", lead: true}, moon: {name: LOLA}, mars: {name: MOLA}}
+    evidence_grade: A
+    uncertainty: {earth: TODO}
+  sun_max_elev:
+    definition: "highest Sun elevation"
+    units: deg
+    sources: {earth: {name: computed}, moon: {name: computed}, mars: {name: computed}}
+    evidence_grade: B
+    uncertainty: {earth: TODO}
+    proxy: true
+gate_layers:
+  water_ice_fraction: {definition: "water or permanent ice share"}

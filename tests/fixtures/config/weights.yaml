@@ -1,0 +1,12 @@
+moon:
+  slope:        {paper_score: 16, matchability: 1.0, range: [0.21, 0.39], published: 0.6, columns: [slope_med, slope_p90]}
+  illumination: {paper_score: 19, matchability: 0.5, range: [0.10, 0.24], published: 0.4, columns: [sun_max_elev]}
+mars:
+  slope:        {paper_score: 9,  matchability: 1.0, range: [0.08, 0.16], published: 0.7, columns: [slope_med, slope_p90]}
+  sunlight:     {paper_score: 17, matchability: 0.7, range: [0.10, 0.20], published: 0.3, columns: [sun_max_elev]}
+alt_weight_sets:
+  moon:
+    liu2025: {slope: 0.7, illumination: 0.3}
+    equal: {rule: "all families equal"}
+  mars:
+    equal: {rule: "all families equal"}

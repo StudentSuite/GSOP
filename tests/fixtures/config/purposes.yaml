@@ -1,0 +1,10 @@
+base: {multipliers: {}}
+landing_mobility:
+  multipliers: {slope: 2}
+  extra_gate: {moon: "slope_med <= 8", mars: "slope_p90 <= 30"}
+  confidence: {mars: low}
+power_night:
+  multipliers: {illumination: 2.5, sunlight: 2.5}
+geology_life:
+  bodies: [mars]
+  multipliers: {slope: 2}

@@ -1,0 +1,11 @@
+status_values: {Broken: 0, Partly: 0.5, Matchable: 1}
+rows:
+  - {id: gravity, property: Gravity, target: "1.62 m/s2 Moon", best_earth: "9.81 everywhere", status: Broken, source: "test"}
+  - {id: regolith, property: Regolith, target: "dry", best_earth: "weathered", status: Partly, source: "test", provisional: true}
+relevance:
+  provisional: true
+  purposes:
+    base: {gravity: "counts", regolith: "counts"}
+    landing_mobility: {gravity: "loads"}
+    power_night: {regolith: "dust"}
+    geology_life: {regolith: "geology"}

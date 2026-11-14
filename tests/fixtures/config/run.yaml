@@ -1,0 +1,11 @@
+runs: 2000
+master_seed: 20261114
+top_fractions: [0.01, 0.05, 0.10]
+robust: {top_fraction: 0.05, min_run_share: 0.9}
+candidate_fraction: 0.03
+chunk_ram_fraction: 0.4
+site_match_radius_km: 20
+novelty_radius_km: 100
+convergence_checkpoints: [500, 1000, 1500, 2000]
+golden: {score_tolerance: 1.0e-4, top1_jaccard_min: 0.99, tiles: 5000, runs: 50}
+operator_check_tolerance: 0.10

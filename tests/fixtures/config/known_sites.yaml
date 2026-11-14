@@ -1,0 +1,13 @@
+site_match_radius_km: 20
+pass_criteria:
+  primary_median_rank_percentile_min: 90
+  negative_control_rank_percentile_below: 25
+  gate_tests: all_rejected
+primary:
+  a: {lat: 19.98, lon: 76.51, bodies: [mars, moon], confirmed: false}
+secondary:
+  b: {lat: 35.35, lon: -111.5, bodies: [moon], confirmed: false, radius_km: 30}
+gate_tests:
+  c: {lat: 51.1, lon: -68.7, bodies: [moon, mars], confirmed: false, expect: rejected}
+negative_controls:
+  d: {lat: -3.0, lon: -60.0, bodies: [moon, mars], confirmed: true}
