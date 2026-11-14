@@ -282,3 +282,56 @@ def test_no_c2_anywhere_in_targets_file():
     lines = (CONFIG_DIR / "targets.yaml").read_text(encoding="utf-8").splitlines()
     data = "\n".join(line.split("#")[0] for line in lines).lower()
     assert "c2" not in data.replace("connecting_ridge_c1", "")
+
+
+# --- A12: ledger.yaml -------------------------------------------------------
+LEDGER_IDS = [
+    "gravity", "air_pressure", "cold_traps", "polar_lighting", "radiation_uv", "regolith",
+    "rock_chemistry", "oxidants", "sterility", "line_of_sight_gps", "electrostatic_dust", "regolith_mechanics",
+]
+LEDGER_STATUS = {
+    "gravity": "Broken", "air_pressure": "Broken", "cold_traps": "Broken", "polar_lighting": "Partly",
+    "radiation_uv": "Partly", "regolith": "Partly", "rock_chemistry": "Partly", "oxidants": "Partly",
+    "sterility": "Broken", "line_of_sight_gps": "Broken", "electrostatic_dust": "Broken",
+    "regolith_mechanics": "Partly",
+}
+
+
+def _parse_ledger():
+    sink = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        out = C._parse_ledger(read("ledger"), _parse_purposes(), C._Warn(sink))
+    assert sink == []
+    return out
+
+
+def test_ledger_has_the_twelve_rows_with_the_specified_status():
+    ledger = _parse_ledger()
+    assert list(ledger.rows) == LEDGER_IDS
+    assert {rid: row.status for rid, row in ledger.rows.items()} == LEDGER_STATUS
+
+
+def test_provisional_rows_cite_shivens_report():
+    ledger = _parse_ledger()
+    prov = {rid for rid, row in ledger.rows.items() if row.provisional}
+    assert prov == {"electrostatic_dust", "regolith_mechanics"}
+    for rid in prov:
+        assert ledger.rows[rid].source == "Shiven's report (unverified)"
+
+
+def test_fidelity_status_values_and_relevance_matrix():
+    ledger = _parse_ledger()
+    assert ledger.status_values == {"Broken": 0, "Partly": 0.5, "Matchable": 1}
+    assert ledger.relevance_provisional is True
+    assert set(ledger.relevance) == {"base", "landing_mobility", "power_night", "ice_resources", "geology_life"}
+    assert set(ledger.relevance["base"]) == set(LEDGER_IDS)
+    for purpose, rows in ledger.relevance.items():
+        assert rows, purpose
+        assert all(reason.strip() for reason in rows.values())
+
+
+def test_ledger_header_states_the_fidelity_formula():
+    text = (CONFIG_DIR / "ledger.yaml").read_text(encoding="utf-8")
+    assert "fidelity = 100 * mean(status_value over the ledger rows relevant to that purpose)" in text
+    assert "Broken 0, Partly 0.5, Matchable 1" in text

@@ -1,0 +1,131 @@
+# Limits ledger: what Earth cannot match about the Moon or Mars.
+# Reported beside every score and NEVER multiplied into it.
+#
+# Fidelity (separate output, 0-100, per target x purpose):
+#   fidelity = 100 * mean(status_value over the ledger rows relevant to that purpose)
+#   Broken 0, Partly 0.5, Matchable 1   (status_values below)
+#
+# The two rows marked `provisional: true` come from Shiven's report and are unverified.
+# The relevance matrix at the bottom is a DRAFT: Anay and Vihaan must review it.
+status_values: {Broken: 0, Partly: 0.5, Matchable: 1}
+
+rows:
+  - id: gravity
+    property: Gravity
+    target: "1.62 m/s2 Moon, 3.71 Mars"
+    best_earth: "9.81 everywhere"
+    status: Broken
+    source: "Fudali 1980; Foucher 2021"
+  - id: air_pressure
+    property: Air pressure
+    target: "Vacuum on the Moon; under 1% of Earth on Mars"
+    best_earth: "About half sea level on the highest roads"
+    status: Broken
+    source: "Pandey 2020"
+  - id: cold_traps
+    property: Cold traps
+    target: "Below 110 K, down to 38 K"
+    best_earth: "About 184 K air-temperature record; satellite surface minimum is lower, check before quoting"
+    status: Broken
+    source: "Hayne; Paige"
+  - id: polar_lighting
+    property: Polar lighting
+    target: "Sun within about 1.5 deg of the horizon all year, 18.6-year cycle"
+    best_earth: "Low Sun in polar spring and autumn only"
+    status: Partly
+    source: "Mazarico; Glaser"
+  - id: radiation_uv
+    property: Radiation and UV
+    target: "No shielding"
+    best_earth: "UV-A 10x sea level in Ladakh; no particle radiation"
+    status: Partly
+    source: "Pandey; Harris"
+  - id: regolith
+    property: Regolith
+    target: "Unweathered, glass-welded, dry"
+    best_earth: "Weathered, oxidised, damp ash and basalt"
+    status: Partly
+    source: "McKay 1993; Foucher"
+  - id: rock_chemistry
+    property: Rock chemistry
+    target: "Iron-rich Martian basalt; lunar anorthosite"
+    best_earth: "Basalt 45-52% silica; anorthosite rare"
+    status: Partly
+    source: "Foucher 2021"
+  - id: oxidants
+    property: Oxidants
+    target: "0.5-1 wt% perchlorate on Mars"
+    best_earth: "Up to 0.6 wt% in the Atacama"
+    status: Partly
+    source: "Harris 2022"
+  - id: sterility
+    property: Sterility
+    target: "No known life"
+    best_earth: "1.7-13.6 million cells per gram in desert cores"
+    status: Broken
+    source: "Stoker; Harris; Pandey"
+  - id: line_of_sight_gps
+    property: Line of sight to Earth, GPS
+    target: "Moon site criterion; no GPS anywhere"
+    best_earth: "Always available"
+    status: Broken
+    source: "Artemis III; Young 2013"
+  - id: electrostatic_dust
+    property: Electrostatic dust
+    target: "Not given in the setup prompt (provisional row)"
+    best_earth: "No global Earth data"
+    status: Broken
+    source: "Shiven's report (unverified)"
+    provisional: true
+  - id: regolith_mechanics
+    property: Regolith mechanics (grain size, density, abrasiveness)
+    target: "Not given in the setup prompt (provisional row)"
+    best_earth: "No global Earth data"
+    status: Partly
+    source: "Shiven's report (unverified)"
+    provisional: true
+
+# DRAFT relevance matrix: which rows matter for which purpose, with a one-line reason each.
+# provisional: true until Anay and Vihaan have reviewed it. A row that is not listed under a
+# purpose is not counted in that purpose's fidelity.
+relevance:
+  provisional: true
+  purposes:
+    base:
+      gravity: "Base profile has no purpose filter, so every limit counts."
+      air_pressure: "Base profile has no purpose filter, so every limit counts."
+      cold_traps: "Base profile has no purpose filter, so every limit counts."
+      polar_lighting: "Base profile has no purpose filter, so every limit counts."
+      radiation_uv: "Base profile has no purpose filter, so every limit counts."
+      regolith: "Base profile has no purpose filter, so every limit counts."
+      rock_chemistry: "Base profile has no purpose filter, so every limit counts."
+      oxidants: "Base profile has no purpose filter, so every limit counts."
+      sterility: "Base profile has no purpose filter, so every limit counts."
+      line_of_sight_gps: "Base profile has no purpose filter, so every limit counts."
+      electrostatic_dust: "Base profile has no purpose filter, so every limit counts."
+      regolith_mechanics: "Base profile has no purpose filter, so every limit counts."
+    landing_mobility:
+      gravity: "Gravity sets loads and traction for landing and driving."
+      air_pressure: "Atmosphere (or its absence) shapes descent and drag."
+      regolith: "Surface material decides how wheels and legs behave."
+      regolith_mechanics: "Grain size, density and abrasiveness decide trafficability."
+      electrostatic_dust: "Charged dust clings to wheels and joints."
+      line_of_sight_gps: "Navigation and communication depend on Earth visibility and GPS."
+    power_night:
+      polar_lighting: "Lighting regime decides how long solar power is available."
+      cold_traps: "Night-time cold limits survival of power and thermal systems."
+      radiation_uv: "UV and radiation degrade solar panels."
+      electrostatic_dust: "Dust on panels cuts power."
+    ice_resources:
+      cold_traps: "Ice only survives where it is cold enough."
+      air_pressure: "Pressure controls how fast exposed ice sublimates."
+      regolith: "Ice is mined out of the surrounding regolith."
+      regolith_mechanics: "Excavation depends on grain size, density and abrasiveness."
+      oxidants: "Perchlorate contaminates Mars ice and soil."
+      rock_chemistry: "Host rock chemistry affects what comes out with the ice."
+    geology_life:
+      rock_chemistry: "Mineralogy is the core of the geology profile."
+      regolith: "Weathering state changes what the soil records."
+      oxidants: "Oxidants destroy organics."
+      sterility: "Earth analogs are never sterile, which limits life-detection tests."
+      radiation_uv: "UV and radiation break down organics at the surface."
