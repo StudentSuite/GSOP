@@ -1,0 +1,230 @@
+# Feature columns, per-body sources and measurement-uncertainty floors
+# (setup prompt section A3 "features.yaml" and issue A10).
+#
+# Reading guide
+#   sources.<body>.lead: true   an Earth source that is a LEAD to verify in the live catalog, not a fact.
+#                               Verified ids go to docs/PROVENANCE.md; unverified ones to docs/UNVERIFIED.md.
+#   evidence_grade              A measured, B computed or same class, C inference or cross-instrument proxy.
+#                               These grades are a first draft and still need review (docs/UNVERIFIED.md).
+#   proxy: true                 cross-instrument proxy. water_index and silica_index are the two weakest
+#                               comparisons in the whole index; the site must say so.
+#   uncertainty.<body>          measurement-uncertainty floor for the sigma rule:
+#                                 sigma_k = max(target_spread_k, measurement_uncertainty_k, 0.25 * IQR_k).
+#                               It is either a sourced {min, max, unit, source} range or the string TODO.
+#                               TODO means no source yet: the IQR term then carries the sigma. The sigma code
+#                               takes `max` from a sourced range (the conservative end); that choice is listed
+#                               in docs/UNVERIFIED.md.
+features:
+  slope_med:
+    definition: "Median over the 6 km tile of slope computed at one shared 500 m baseline"
+    units: deg
+    sources:
+      earth: {name: "NASADEM (SRTM) between 56S and 60N; Copernicus DEM GLO-30 above 60N", lead: true}
+      moon: {name: LOLA}
+      mars: {name: MOLA}
+    evidence_grade: A
+    uncertainty:
+      earth: TODO
+      moon: {min: 1.5, max: 2.5, unit: deg, source: "Barker 2021 (south pole landing DEMs, 5 m per pixel; slope error)"}
+      mars: TODO
+
+  slope_p90:
+    definition: "90th percentile over the 6 km tile of slope computed at one shared 500 m baseline"
+    units: deg
+    sources:
+      earth: {name: "NASADEM (SRTM) between 56S and 60N; Copernicus DEM GLO-30 above 60N", lead: true}
+      moon: {name: LOLA}
+      mars: {name: MOLA}
+    evidence_grade: A
+    uncertainty:
+      earth: TODO
+      moon: {min: 1.5, max: 2.5, unit: deg, source: "Barker 2021 (south pole landing DEMs, 5 m per pixel; slope error)"}
+      mars: TODO
+
+  relief:
+    definition: "Elevation range (max minus min of 500 m cells) in the 6 km tile"
+    units: m
+    sources:
+      earth: {name: "NASADEM (SRTM) between 56S and 60N; Copernicus DEM GLO-30 above 60N", lead: true}
+      moon: {name: LOLA}
+      mars: {name: MOLA}
+    evidence_grade: A
+    uncertainty:
+      earth: TODO
+      moon: {min: 0.3, max: 0.5, unit: m, source: "Barker 2021 (south pole landing DEMs, 5 m per pixel; height error)"}
+      mars: TODO
+
+  rough_a:
+    definition: "RMS height after plane removal at the shorter baseline"
+    units: m
+    baseline_m: 100            # default ~100 m. TODO confirm with Vihaan
+    sources:
+      earth: {name: "NASADEM (SRTM) between 56S and 60N; Copernicus DEM GLO-30 above 60N", lead: true}
+      moon: {name: LOLA}
+      mars: {name: MOLA}
+    evidence_grade: A
+    uncertainty:
+      earth: TODO
+      moon: {min: 0.3, max: 0.5, unit: m, source: "Barker 2021 (south pole landing DEMs, 5 m per pixel; height error)"}
+      mars: TODO
+
+  rough_b:
+    definition: "RMS height after plane removal at the longer baseline"
+    units: m
+    baseline_m: 1000           # default ~1 km. TODO confirm with Vihaan
+    sources:
+      earth: {name: "NASADEM (SRTM) between 56S and 60N; Copernicus DEM GLO-30 above 60N", lead: true}
+      moon: {name: LOLA}
+      mars: {name: MOLA}
+    evidence_grade: A
+    uncertainty:
+      earth: TODO
+      moon: {min: 0.3, max: 0.5, unit: m, source: "Barker 2021 (south pole landing DEMs, 5 m per pixel; height error)"}
+      mars: TODO
+
+  sun_max_elev:
+    definition: "Highest Sun elevation over the year, computed from latitude, obliquity and slope/aspect"
+    units: deg
+    sources:
+      earth: {name: "computed from latitude, obliquity, slope/aspect"}
+      moon: {name: "computed; Glaser 2018 values for the two lunar sites. Pole targets: Sun within about 1.5 deg of the horizon all year (sun_max_elev ~ 1.5)"}
+      mars: {name: "computed from latitude, obliquity, slope/aspect"}
+    evidence_grade: B
+    uncertainty:
+      earth: TODO
+      moon: TODO
+      mars: TODO
+
+  sun_low_share:
+    definition: "Share of daylight with the Sun under 5 deg above the horizon"
+    units: "fraction 0-1"
+    sources:
+      earth: {name: "computed from latitude, obliquity, slope/aspect"}
+      moon: {name: "computed; Glaser 2018 values for the two lunar sites. Pole targets: sun_low_share ~ 1.0"}
+      mars: {name: "computed from latitude, obliquity, slope/aspect"}
+    evidence_grade: B
+    uncertainty:
+      earth: TODO
+      moon: TODO
+      mars: TODO
+
+  insol_annual:
+    definition: "Annual insolation computed from latitude, obliquity and slope/aspect (Mars sunlight family)"
+    units: "TODO unit not fixed in the setup prompt (W/m2 expected)"
+    sources:
+      earth: {name: "computed from latitude, obliquity, slope/aspect"}
+      moon: null
+      mars: {name: "computed from latitude, obliquity, slope/aspect"}
+    evidence_grade: B
+    uncertainty:
+      earth: TODO
+      mars: TODO
+
+  t_mean:
+    definition: "Annual mean surface temperature"
+    units: K
+    sources:
+      earth: {name: "MODIS land-surface temperature, 2015-2024 climatology", lead: true}
+      moon: {name: "Diviner (not available at the pole; flag)"}
+      mars: {name: "Mars climate data (dataset not chosen yet)", lead: true}
+    evidence_grade: A
+    uncertainty:
+      earth: TODO
+      moon: TODO
+      mars: TODO
+
+  t_coldest:
+    definition: "Coldest-month surface temperature"
+    units: K
+    sources:
+      earth: {name: "MODIS land-surface temperature, 2015-2024 climatology", lead: true}
+      moon: {name: "Diviner (not available at the pole; flag)"}
+      mars: {name: "Mars climate data (dataset not chosen yet)", lead: true}
+    evidence_grade: A
+    uncertainty:
+      earth: TODO
+      moon: TODO
+      mars: TODO
+
+  ti_proxy:
+    definition: "Day-night temperature swing in the dry season (three driest consecutive months; falls back to the annual median and flags it)"
+    units: K
+    sources:
+      earth: {name: "MODIS land-surface temperature, 2015-2024 climatology", lead: true}
+      moon: {name: Diviner}
+      mars: {name: THEMIS}
+    evidence_grade: B
+    uncertainty:
+      earth: TODO
+      moon: TODO
+      mars: TODO
+
+  dust_index:
+    definition: "How much dust is in the air or on the surface. Mars profile only: second column of the thermal_inertia family, sharing its weight"
+    units: "TODO unit not fixed in the setup prompt"
+    sources:
+      earth: {name: "MERRA-2 dust or MODIS aerosol", lead: true}
+      moon: null
+      mars: {name: "TES albedo and dust cover"}
+    evidence_grade: C
+    uncertainty:
+      earth: TODO
+      mars: TODO
+
+  water_index:
+    definition: "0-1 index. Earth: mean of permafrost probability and a 0-1 aridity index. Moon: PSR share of the tile. Mars: SWIM ice consistency. Cross-instrument proxy."
+    units: "index 0-1"
+    proxy: true
+    sources:
+      earth: {name: "permafrost probability map plus an aridity index from GPM precipitation and SMAP soil moisture (no dataset chosen yet)", lead: true}
+      moon: {name: "PSR share of the tile"}
+      mars: {name: "SWIM ice consistency (swim.psi.edu)"}
+    evidence_grade: C
+    uncertainty:
+      earth: TODO
+      moon: TODO
+      mars: TODO
+
+  silica_index:
+    definition: "Thermal-infrared emissivity band ratio. Cross-instrument proxy."
+    units: "unitless band ratio"
+    proxy: true
+    sources:
+      earth: {name: "ASTER GED (EMIT only where available)", lead: true}
+      moon: {name: "Diviner Christiansen feature"}
+      mars: {name: TES}
+    evidence_grade: C
+    uncertainty:
+      earth: TODO
+      moon: TODO
+      mars: TODO
+
+  air_density:
+    definition: "Air density from elevation (Mars family only). Earth: standard atmosphere. Mars: exponential pressure law; constants must come from config with a source."
+    units: "kg/m3"
+    sources:
+      earth: {name: "standard-atmosphere density from elevation (elevation from the same DEMs as slope)"}
+      moon: null
+      mars: {name: "exponential pressure law on MOLA elevation. TODO constants are not sourced yet"}
+    evidence_grade: B
+    uncertainty:
+      earth: TODO
+      mars: TODO
+
+# Earth-only layers used by the gates (gates.yaml). They are not scored.
+gate_layers:
+  water_ice_fraction:
+    definition: "Share of the tile covered by open water or permanent ice"
+    units: "fraction 0-1"
+    sources:
+      earth: {name: "no dataset chosen yet (water and permanent-ice product)", lead: true}
+  ndvi_median:
+    definition: "Median NDVI over the tile"
+    units: "NDVI -1 to 1"
+    sources:
+      earth: {name: "MODIS NDVI, 2015-2024", lead: true}
+  builtup_cropland_fraction:
+    definition: "Share of the tile that is built-up or farmed land"
+    units: "fraction 0-1"
+    sources:
+      earth: {name: "no dataset chosen yet (land-cover product)", lead: true}

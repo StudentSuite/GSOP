@@ -166,3 +166,69 @@ def test_gates_values_and_reason_codes():
 def test_gate_file_flags_unsourced_thresholds():
     text = (CONFIG_DIR / "gates.yaml").read_text(encoding="utf-8")
     assert text.count("TUNABLE, NOT SOURCED") == 3
+
+
+# --- A10: features.yaml -----------------------------------------------------
+A10_COLUMNS = [
+    "slope_med", "slope_p90", "relief", "rough_a", "rough_b", "sun_max_elev", "sun_low_share",
+    "insol_annual", "t_mean", "t_coldest", "ti_proxy", "dust_index", "water_index", "silica_index",
+    "air_density",
+]
+
+
+def _parse_features():
+    sink = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        feats = C._parse_features(read("features"), C._Warn(sink))
+    assert sink == []
+    return feats
+
+
+def test_features_list_every_column_and_gate_layer():
+    feats = _parse_features()
+    assert list(feats.columns) == A10_COLUMNS
+    assert set(feats.gate_layers) == {"water_ice_fraction", "ndvi_median", "builtup_cropland_fraction"}
+
+
+def test_every_weights_column_exists_in_features():
+    fam, _ = _parse_weights()
+    feats = _parse_features()
+    used = {c for body in fam.values() for f in body.values() for c in f.columns}
+    assert used <= set(feats.columns)
+    assert set(feats.columns) <= used, "a feature no family uses is probably a typo"
+
+
+def test_every_uncertainty_floor_has_a_source_or_an_explicit_todo():
+    feats = _parse_features()
+    for name, f in feats.columns.items():
+        for body, src in f.sources.items():
+            if src is None:
+                continue
+            assert body in f.uncertainty, f"{name}: no uncertainty entry for {body}"
+            entry = f.uncertainty[body]
+            assert entry == "TODO" or entry["source"], f"{name}.{body}"
+
+
+def test_barker_floors_and_proxy_flags():
+    feats = _parse_features().columns
+    assert feats["slope_med"].uncertainty["moon"]["min"] == 1.5
+    assert feats["slope_med"].uncertainty["moon"]["max"] == 2.5
+    assert feats["relief"].uncertainty["moon"]["min"] == 0.3
+    assert feats["relief"].uncertainty["moon"]["max"] == 0.5
+    assert {n for n, f in feats.items() if f.proxy} == {"water_index", "silica_index"}
+
+
+def test_rough_baselines_are_flagged_todo():
+    text = (CONFIG_DIR / "features.yaml").read_text(encoding="utf-8")
+    feats = _parse_features().columns
+    assert feats["rough_a"].extra["baseline_m"] == 100
+    assert feats["rough_b"].extra["baseline_m"] == 1000
+    assert text.count("TODO confirm with Vihaan") >= 2
+
+
+def test_earth_sources_are_leads_until_verified():
+    for name, f in _parse_features().columns.items():
+        earth = f.sources.get("earth")
+        if earth and any(k in earth["name"] for k in ("NASADEM", "MODIS", "ASTER", "MERRA")):
+            assert earth.get("lead") is True, name
