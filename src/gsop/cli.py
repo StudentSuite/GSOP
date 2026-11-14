@@ -186,9 +186,21 @@ def golden() -> None:
 
 
 @app.command("verify-data")
-def verify_data() -> None:
+def verify_data(
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir", help="Folder holding processed/ and MANIFEST.json."),
+) -> None:
     """Check sha256 of data/processed files against MANIFEST.json."""
-    _stub("verify-data")
+    from gsop import manifest
+
+    result = manifest.verify_data(data_dir or manifest.DEFAULT_DATA_DIR)
+    for problem in result.problems:
+        typer.echo(f"FAIL {problem}", err=True)
+    for name in result.extra_files:
+        typer.echo(f"note: {name} is in data/processed but not in the manifest")
+    if not result.ok:
+        typer.echo(f"verify-data FAILED ({len(result.problems)} problem(s))", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"verify-data OK: {result.checked} file(s) match {result.manifest}")
 
 
 @app.command()
