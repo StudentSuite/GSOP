@@ -274,8 +274,16 @@ def merge(results_moon: Path, results_mars: Path) -> None:
 
 @app.command("check-operators")
 def check_operators() -> None:
-    """Compare Earth Engine and numpy operators on one test window."""
-    _stub("check-operators")
+    """Compare Earth Engine and numpy operators on one test window (writes docs/OPERATOR_CHECK.md; exit 1 if > 10% apart)."""
+    from gsop.config import load_config
+    from gsop.earth import check_operators as co
+    from gsop.earth.gee_auth import ensure_ee
+
+    cfg = load_config()
+    ee = ensure_ee(cfg=cfg)
+    result = co.run_check(ee, cfg, Path(__file__).resolve().parents[2] / "docs" / "OPERATOR_CHECK.md", log=typer.echo)
+    if not result.passed:
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":
