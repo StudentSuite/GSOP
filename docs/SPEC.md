@@ -21,6 +21,8 @@ Each section below says which pipeline stage it belongs to. A stage with no text
 | s7 | `gsop s7 validate` | Validation |
 | s8 | `gsop s8 export` | Export |
 | s9 | `gsop s9 discover` | Discovery |
+| beside the score | `gsop ledger` | Ledger and fidelity |
+| cross-machine check | `gsop golden` | Golden slice, Golden test |
 
 ## Grid (s1)
 
@@ -205,7 +207,14 @@ with every `E[.]` a tile mean (`reduceResolution(mean)` of `z`, `z^2`, `x z`, `y
 
 ## Purposes (s4)
 
-TODO (phase C). Multiply base weights by the purpose multipliers, then renormalise to sum 1 (`config/purposes.yaml`).
+`src/gsop/purposes.py`, profiles in `config/purposes.yaml`. A purpose profile changes the **weights** (and for landing_mobility the **gates**), never the similarity, sigma or the data:
+
+1. Start from the family weights of the base score (derived weights, renormalised over the families the target actually has).
+2. Multiply each family weight by the profile's multiplier (1 for a family not listed; a multiplier naming a family the body does not have is ignored).
+3. Renormalise to sum 1.
+
+Moon: `landing_mobility` (slope, roughness, relief x2; extra gate `slope_med <= 8`), `power_night` (illumination x2.5, and temperature x2; the Moon has no `sunlight` family, so that multiplier is ignored), `ice_resources` (cold_dry, thermal_inertia, temperature x2; `water` is a Mars family and ignored), plus `base` (no multipliers). Mars: the same three (landing_mobility gate `slope_p90 <= 30`; `power_night` uses `sunlight` x2.5 and temperature x2; `ice_resources` uses `water`, thermal_inertia, temperature x2), plus `geology_life` (composition x2, water x1.5), plus `base`. No Moon life-detection profile (decision D5). Mars `landing_mobility` and `power_night` carry `confidence: low` into every output row.
+The extra gate is parsed by a whitelist (`<column> <=|>=|<|> <number>`, nothing else) and applied only to its own profile; a tile failing it still has a base score. In the Monte Carlo the multipliers are applied after the weights are sampled (see Monte Carlo).
 
 ## Monte Carlo (s5)
 
@@ -351,6 +360,78 @@ Takes about one minute on an Apple M2.
 
 A failure prints the check, where (body/target/profile), and the size of the difference. If the config hash differs, the expectation is stale (a scoring config file changed): read that failure first.
 **Not yet measured:** the test has been run on one machine (Apple M2). The 1e-4 tolerance is the issue's value, not one derived from a Windows run; the first Windows result decides whether it needs to be wider.
+
+## Worked example (issue C31)
+
+Three tiles, four columns, **toy numbers chosen so the arithmetic can be followed by hand** (they are not data; the real families have more columns and the real weights are in `config/weights.yaml`). `tests/test_spec_example.py` recomputes every number below with the real code and fails if this text and the code disagree.
+
+**Set-up.** Families: `slope` = {`slope_med`}, `illumination` = {`sun_max_elev`, `sun_low_share`}, `cold_dry` = {`water_index`}. Target: `slope_med` 5.0, `sun_max_elev` 2.0, `sun_low_share` 1.0, `water_index` 0.8.
+
+**1. Sigma** (`sigma_k = max(target_spread, measurement_uncertainty, 0.25 * IQR)`), with the IQR taken over the gated Earth tiles:
+
+| column | target spread | measurement uncertainty | 0.25 x IQR | sigma |
+|---|---|---|---|---|
+| `slope_med` | 1.0 | 2.0 | 0.25 x 6 = 1.5 | **2.0** |
+| `sun_max_elev` | 0.5 | 0 | 0.25 x 40 = 10 | **10** |
+| `sun_low_share` | 0.05 | 0 | 0.25 x 0.8 = 0.2 | **0.2** |
+| `water_index` | 0.1 | 0 | 0.25 x 1.6 = 0.4 | **0.4** |
+
+**2. Weights.** Derivation `w_f = (paper_score_f / sum) * matchability_f`, rescaled to sum 1. Toy inputs: paper scores slope 30, illumination 20, cold_dry 10 (sum 60) and matchability 1.0, 0.5, 1.0. Raw: 30/60 x 1.0 = 0.5, 20/60 x 0.5 = 0.1667, 10/60 x 1.0 = 0.1667; their sum is 0.8333, so the weights are **0.6, 0.2, 0.2**. The `landing_mobility` purpose (toy: slope x2, gate `slope_med <= 8`) gives 1.2, 0.2, 0.2, sum 1.6, so **0.75, 0.125, 0.125**.
+
+**3. Tiles.**
+
+| tile | `slope_med` | `sun_max_elev` | `sun_low_share` | `water_index` |
+|---|---|---|---|---|
+| A | 5.0 | 62.0 | 0.20 | 0.8 |
+| B | 9.0 | 12.0 | 0.90 | 0.4 |
+| C | 3.0 | 2.0 | 1.00 | 0.0 |
+
+**4. Column similarities** `s = exp(-0.5 z^2)`, `z = (x - target) / sigma`:
+
+| tile | `slope_med` | `sun_max_elev` | `sun_low_share` | `water_index` |
+|---|---|---|---|---|
+| A | z 0, s 1.0000 | z 6, s 0.0000 (1.5e-8) | z -4, s 0.0003 | z 0, s 1.0000 |
+| B | z 2, s 0.1353 | z 1, s 0.6065 | z -0.5, s 0.8825 | z -1, s 0.6065 |
+| C | z -1, s 0.6065 | z 0, s 1.0000 | z 0, s 1.0000 | z -2, s 0.1353 |
+
+**5. Family similarity** = mean of the family's columns: A (1.0000, 0.0002, 1.0000), B (0.1353, 0.7445, 0.6065), C (0.6065, 1.0000, 0.1353) for (slope, illumination, cold_dry).
+
+**6. Tile score** = 100 x sum of weight x family similarity:
+
+| tile | base (0.6, 0.2, 0.2) | landing_mobility (0.75, 0.125, 0.125) |
+|---|---|---|
+| A | 100 x (0.6 x 1.0000 + 0.2 x 0.0002 + 0.2 x 1.0000) = **80.00** | **87.50** |
+| B | 100 x (0.6 x 0.1353 + 0.2 x 0.7445 + 0.2 x 0.6065) = **35.14** | not scored: `slope_med` 9.0 > 8 fails the extra gate (NaN) |
+| C | 100 x (0.6 x 0.6065 + 0.2 x 1.0000 + 0.2 x 0.1353) = **59.10** | **59.68** |
+
+Tile A is an "Earth tile" that matches nothing about the polar Sun (illumination similarity 0.0002) and still ranks first because slope and water carry 80% of the weight: this is why `illumination_match` is shown beside the score, and why the ledger exists.
+
+**7. One Monte Carlo run** (landing_mobility, run `i`; the numbers drawn are illustrative):
+(a) weights: draw each family uniformly in its range (toy ranges slope 0.5-0.7, illumination 0.1-0.3, cold_dry 0.1-0.3), say 0.55, 0.25, 0.15; renormalise (sum 0.95): 0.5789, 0.2632, 0.1579; apply the purpose multiplier (slope x2): 1.1579, 0.2632, 0.1579; renormalise (sum 1.5789): **0.7333, 0.1667, 0.1000**.
+(b) data: the run's shift of the target value, say +0.5 for `slope_med` and -0.1 for `water_index` (target jitter minus Earth bias, section Monte Carlo), so the target for this run is 5.5, 2.0, 1.0, 0.7.
+(c) score every gated tile of the profile with those weights and that shifted target: A 80.77, C 52.40 (tile B is not in this profile: its gate fails).
+(d) top sets: with 2 gated tiles the top 1% holds `ceil(0.01 x N)` = 1 tile; in this run it is A, and the counter of A's top-1%, top-5% and top-10% sets goes up by one. Over 2,000 runs `freq_top1` of a tile is its counter divided by 2,000. Ties are broken by the lower `tile_id`.
+
+## Assumptions and deviations from the published plan
+
+Everything here is also in `docs/UNVERIFIED.md` or `docs/DECISIONS.md` where it needs a human; this list is the part that changes the **score**.
+
+**Decisions taken from the owner (D1 to D10, `docs/DECISIONS.md`):** 6 km EPSG:6933 tiles; 2,000 runs, seed 20261114; Moon thermal-inertia weight 0.019 not the published 0.03; illumination kept in the primary with a `no_illumination` variant; Moon 3 profiles + base, Mars 4 + base, no Moon life detection; Mars target check in warn mode; one Mars `water_index` composite; weights and data jittered; ML second opinion only; Arcadia unscored.
+
+**Assumptions I made and that the owner has not confirmed:**
+
+1. **Sigma rule** `max(target_spread, measurement_uncertainty, 0.25 x IQR)`: the 0.25 and the IQR term come from the setup prompt (section 3); the use of the `max` end of each sourced uncertainty range is mine (conservative). Most uncertainties are `TODO` (contribute 0), so for most columns the IQR term decides sigma.
+2. **Each family weight is split equally over its columns**, and a family score is the mean of its columns. The plan states family weights only.
+3. **Missing columns:** a column the target has no value for is dropped from its family and the family keeps its weight; a family with no column left is an error unless `unavailable_target_families: drop_and_renormalise` (owner's choice; the default is `error`, so nothing is dropped silently). A tile with a NaN in a used column is rejected by the missing-data gate (not scored as 0).
+4. **Gate layers NaN means rejected,** not passed.
+5. **The Monte Carlo ranks over the gated tiles of each target and profile**; "top 1%" is `ceil(0.01 x N)` of them, ties to the lower `tile_id`. The plan does not define tie handling.
+6. **Data jitter** moves the target value (shift = target jitter minus Earth bias) rather than every tile; mathematically the same, and only the sourced uncertainties jitter (`TODO` means sd 0). **Today no Earth bias is sourced, so only a handful of target-side terms jitter**, and the Monte Carlo spread understates the real data uncertainty.
+7. **Weights sampled uniformly within the published ranges**, independently per family, then renormalised: the renormalisation changes the effective ranges, so a sampled value can end outside its published range.
+8. **Alternative weight sets** zero the families they do not name (Liu 2025 and Mashal 2025 name 5 and 3 families).
+9. **Illumination is an analytic, flat-horizon computation;** terrain shadowing at the lunar poles is not in the score (known weakness, see Illumination).
+10. **Fidelity is purpose-only** (the ledger has no body or target column) and the relevance matrix is a draft.
+
+**Deviations from the published plan that change the score:** (a) Moon thermal inertia 0.019 vs 0.03 (D3); (b) Moon `ti_proxy` is a diurnal-curve swing, not thermal inertia (a proxy); (c) **families without a target value** (Moon: composition, whose only column `silica_index` is unavailable, and possibly temperature and thermal_inertia; Mars: composition, thermal_inertia and possibly temperature): with the default `unavailable_target_families: error` scoring of that target **stops and names the family**; `drop_and_renormalise` would score without them and so departs from the published weights. The choice is open (`docs/UNVERIFIED.md`, "families without a target value"). Separately, **Earth `water_index` is not built** (no permafrost asset), a blocker that makes the missing-data gate reject every tile until resolved; (d) Earth terrain is NASADEM / Copernicus GLO-30 with an unmeasured seam at 56 S / 60 N; (e) the Moon `no_illumination` variant, `equal`, `liu2025` and `mashal2025` sets are sensitivity runs only, never the headline score.
 
 ## Known weaknesses
 
