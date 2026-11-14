@@ -302,3 +302,85 @@ def run_block(x: np.ndarray, mcs: MCSetup, first_run: int, last_run: int, fracti
         stats.update(score)
         add_membership(counters[seg], score, fractions)
     return Pass1Block(first_run, last_run, stats, counters)
+
+
+# ===========================================================================================================
+# Pass 2: exact percentiles for the candidate tiles and their rank-percentile range (issue C19)
+# ===========================================================================================================
+from pathlib import Path  # noqa: E402
+
+RANK_SCALE = 100.0  # ranks are stored as uint16 in hundredths of a percentile point (0..10000)
+
+
+def select_candidates(mean_score: np.ndarray, count_top5: np.ndarray, fraction: float) -> np.ndarray:
+    """Candidate tiles: the union of the top ``fraction`` of tiles by mean score and by membership count of the top 5% set (ties by mean, then lower index).
+
+    Returned as sorted tile indices (positions in the tile block, not tile ids)."""
+    n = len(mean_score)
+    k = max(1, int(np.ceil(fraction * n)))
+    by_mean = np.lexsort((np.arange(n), -mean_score))[:k]
+    by_freq = np.lexsort((np.arange(n), -mean_score, -count_top5.astype(np.int64)))[:k]
+    return np.union1d(by_mean, by_freq)
+
+
+def candidate_scores_and_ranks(x: np.ndarray, mcs: MCSetup, i: int, cand_idx: np.ndarray, chunk_rows: int = _S.DEFAULT_CHUNK_ROWS,
+                               guard: Optional[AllocGuard] = None) -> tuple[np.ndarray, np.ndarray]:
+    """Run ``i``'s score of each candidate (identical to pass 1: same seeds, same code) and its rank percentile among ALL tiles of that run.
+
+    Rank percentile = 100 * (number of tiles with a strictly lower score) / N, found by sorting the run's scores once and ``np.searchsorted``."""
+    score = score_run(x, mcs, i, chunk_rows, guard)
+    ordered = np.sort(score)
+    cand = score[cand_idx]
+    below = np.searchsorted(ordered, cand, side="left")
+    rank = np.rint(below * (100.0 * RANK_SCALE / len(score))).astype(np.uint16)
+    return cand, rank
+
+
+class Pass2Store:
+    """Disk-backed (runs x candidates) arrays for candidate scores (float32) and rank percentiles (uint16 hundredths). ``.npy`` files opened as
+    memmaps so workers write their own rows and nothing has to fit in RAM."""
+
+    def __init__(self, directory: Path, runs: int, n_candidates: int, create: bool = True) -> None:
+        self.dir = Path(directory)
+        self.runs, self.n = runs, n_candidates
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.scores_path, self.rank_path = self.dir / "cand_scores.npy", self.dir / "cand_rank.npy"
+        if create and not (self.scores_path.exists() and self.rank_path.exists()):
+            np.lib.format.open_memmap(self.scores_path, mode="w+", dtype=np.float32, shape=(runs, n_candidates)).flush()
+            np.lib.format.open_memmap(self.rank_path, mode="w+", dtype=np.uint16, shape=(runs, n_candidates)).flush()
+
+    def open(self) -> tuple[np.ndarray, np.ndarray]:
+        return np.load(self.scores_path, mmap_mode="r+"), np.load(self.rank_path, mmap_mode="r+")
+
+    def block_marker(self, first: int, last: int) -> Path:
+        return self.dir / f"done_{first}_{last}.txt"
+
+
+def pass2_block(x: np.ndarray, mcs: MCSetup, cand_idx: np.ndarray, first: int, last: int, store: Pass2Store, chunk_rows: int = _S.DEFAULT_CHUNK_ROWS,
+                debug: Optional[bool] = None) -> None:
+    """Fill rows ``first`` to ``last - 1`` of the store. Skips a block whose completion marker exists (resume)."""
+    marker = store.block_marker(first, last)
+    if marker.exists():
+        return
+    scores, ranks = store.open()
+    guard = AllocGuard(x.shape[0], last - first, debug)
+    for i in range(first, last):
+        s, r = candidate_scores_and_ranks(x, mcs, i, cand_idx, chunk_rows, guard)
+        scores[i], ranks[i] = s, r
+    scores.flush(), ranks.flush()
+    marker.write_text("done\n", encoding="utf-8")
+
+
+def summarise_candidates(store: Pass2Store, chunk_cols: int = 20_000) -> dict:
+    """Exact per-candidate ``mc_median``, ``mc_p05``, ``mc_p95`` of the score and ``rank_pct_p05/p50/p95`` over all runs (numpy linear percentiles).
+
+    Reads the memmap in blocks of candidate columns so memory stays at (runs x chunk_cols)."""
+    scores, ranks = store.open()
+    out = {k: np.empty(store.n, dtype=np.float32) for k in ("mc_median", "mc_p05", "mc_p95", "rank_pct_p05", "rank_pct_p50", "rank_pct_p95")}
+    for a in range(0, store.n, chunk_cols):
+        b = min(a + chunk_cols, store.n)
+        s = np.asarray(scores[:, a:b], dtype=np.float32)
+        r = np.asarray(ranks[:, a:b], dtype=np.float64) / RANK_SCALE
+        out["mc_p05"][a:b], out["mc_median"][a:b], out["mc_p95"][a:b] = np.percentile(s, [5, 50, 95], axis=0)
+        out["rank_pct_p05"][a:b], out["rank_pct_p50"][a:b], out["rank_pct_p95"][a:b] = np.percentile(r, [5, 50, 95], axis=0)
+    return out
