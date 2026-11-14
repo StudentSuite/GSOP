@@ -252,3 +252,73 @@ def swim_arcadia_footprint(source: str = SWIM_ARCADIA_FOOTPRINT_URL) -> dict:
                 "pixel_m": float(ds.res[0]), "source": source,
                 "is_a_site_centre": False,
             }
+
+
+# ===========================================================================================================
+# Temperature (unavailable), air_density and insolation (issue B31)
+# ===========================================================================================================
+def _local_tile_centres(window_km: float, tile_m: float, stride_m: float) -> np.ndarray:
+    """(x, y) centres in the local grid (metres from the window centre) of the tiles of a ``window_km`` square."""
+    n = int(round((window_km * 1000.0 - tile_m) / stride_m)) + 1
+    start = -window_km * 500.0 + tile_m / 2.0
+    return np.array([(start + i * stride_m, start + j * stride_m) for j in range(n) for i in range(n)])
+
+
+def mars_climate_rows(cfg: Config, mola_source: str = MOLA_URL, cache_dir: Optional[Path] = None) -> list[dict]:
+    """``air_density``, ``insol_annual``, ``sun_max_elev`` (built) and ``t_mean``, ``t_coldest`` (unavailable) at the Mars targets.
+
+    * ``air_density``: the exponential law of ``gsop.features_misc`` (constants from ``features.yaml``, Mars Fact Sheet) at the mean MOLA
+      elevation (above the areoid) of each tile; median over tiles. Same function as Earth, no constants in code.
+    * ``insol_annual`` and ``sun_max_elev``: ``gsop.illumination`` with the Mars obliquity and irradiance from ``features.yaml``, at the
+      latitude of each tile centre (flat ground, no terrain shadowing).
+    * ``t_mean``, ``t_coldest``: unavailable, see the note.
+    """
+    from gsop.features_misc import air_density
+    from gsop.illumination import compute_illumination
+    from gsop.targets.moon import _summarise
+
+    ts = cfg.target_settings
+    tile = cfg.features.operators.tile_m
+    ad = cfg.features.air_density
+    rows: list[dict] = []
+    for name, t in cfg.targets("mars").items():
+        if t.lat is None:
+            continue
+        window = f"{ts.target_window_km:g} km window, {ts.tile_stride_km:g} km stride, {tile / 1000:g} km tiles"
+        info = read_window(mola_source, t.lat, t.lon_e, ts.target_window_km, cache_dir)
+        dem = info["dem"].astype("float64")
+        n, step = int(round(tile / info["cell_m"])), int(round(ts.tile_stride_km * 1000.0 / info["cell_m"]))
+        elev = np.array([np.nanmean(dem[r : r + n, c : c + n]) for r in range(0, dem.shape[0] - n + 1, step) for c in range(0, dem.shape[1] - n + 1, step)])
+        ok = np.isfinite(elev)
+        rho = np.full(elev.shape, np.nan)
+        rho[ok] = air_density(elev[ok], ad["mars"], ad["universal_gas_constant_j_mol_k"])
+        p = _summarise(rho, ts.spread_iqr_divisor)
+        rows.append({
+            "target": name, "column": "air_density", "value": p["value"], "spread": p["spread"],
+            "source": "gsop.features_misc exponential law (NASA Mars Fact Sheet constants in features.yaml) at MOLA elevation above the areoid",
+            "evidence_grade": "B", "window": window, "unavailable": not np.isfinite(p["value"]),
+            "note": "kg/m3; the pressure datum (stated 'at mean radius' vs MOLA areoid) is an open TODO in features.yaml",
+        })
+        # insolation at the tile-centre latitudes
+        centres = _local_tile_centres(ts.target_window_km, tile, ts.tile_stride_km * 1000.0)
+        from pyproj import Transformer
+
+        sphere = CRS.from_proj4(f"+proj=longlat +a={MARS_RADIUS_M} +b={MARS_RADIUS_M} +no_defs")
+        _, lat = Transformer.from_crs(local_crs(t.lat, t.lon_e), sphere, always_xy=True).transform(centres[:, 0], centres[:, 1])
+        ill = compute_illumination(np.asarray(lat), cfg.features.illumination.bodies["mars"], cfg.features.illumination)
+        for col in ("insol_annual", "sun_max_elev"):
+            q = _summarise(ill[col], ts.spread_iqr_divisor)
+            rows.append({
+                "target": name, "column": col, "value": q["value"], "spread": q["spread"],
+                "source": "computed: gsop.illumination (analytic, flat ground) with the Mars obliquity and irradiance from features.yaml",
+                "evidence_grade": "B", "window": window, "unavailable": not np.isfinite(q["value"]),
+                "note": "W/m2 annual mean on flat ground" if col == "insol_annual" else "degrees; geometry only, circular-orbit approximation (Mars eccentricity about 0.09)",
+            })
+        for col in ("t_mean", "t_coldest"):
+            rows.append({
+                "target": name, "column": col, "value": float("nan"), "spread": float("nan"),
+                "source": "Mars climate data (none verified)", "evidence_grade": "C", "window": window, "unavailable": True,
+                "note": "unavailable: no gridded annual-mean or coldest-month surface-temperature file was found (one search: only single-time TES snapshot images and "
+                        "thermal-inertia maps). The Mars Climate Database is a model with its own access route that was not verified or used",
+            })
+    return rows
