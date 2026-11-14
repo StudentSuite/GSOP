@@ -133,3 +133,101 @@ def sample_data_shift(mcs: MCSetup, i: int) -> np.ndarray:
 def run_params(mcs: MCSetup, i: int) -> tuple[np.ndarray, np.ndarray]:
     """``(weights (F,), jittered target values (K,))`` of run ``i``."""
     return sample_weights(mcs, i), mcs.target_values + sample_data_shift(mcs, i)
+
+
+# ===========================================================================================================
+# Core scoring with online statistics (issue C17): 4 million tiles x 2,000 runs never exists in memory
+# ===========================================================================================================
+import os  # noqa: E402
+
+from gsop import similarity as _S  # noqa: E402
+
+MAX_BUFFER_COLUMNS = 64  # the largest legitimate per-run buffer is (tiles x columns); an (tiles x runs) array would be far bigger
+
+
+def debug_enabled() -> bool:
+    return os.environ.get("GSOP_MC_DEBUG", "") not in ("", "0")
+
+
+class AllocGuard:
+    """In debug mode (``GSOP_MC_DEBUG=1``) refuse any buffer whose size looks like (tiles x runs); the message carries the allocated size."""
+
+    def __init__(self, n_tiles: int, runs: int, enabled: Optional[bool] = None) -> None:
+        self.n_tiles, self.runs = n_tiles, runs
+        self.enabled = debug_enabled() if enabled is None else enabled
+
+    def check(self, name: str, shape) -> None:
+        elements = int(np.prod(shape))
+        if self.enabled and elements > self.n_tiles * MAX_BUFFER_COLUMNS:
+            raise AssertionError(f"{name}: allocating {elements:,} elements ({elements * 4 / 1e6:,.0f} MB as float32) for {self.n_tiles:,} tiles and {self.runs} runs "
+                                 f"looks like an N x runs matrix; the engine must stream")
+
+
+class OnlineStats:
+    """Per-tile running statistics over runs: count, mean, M2 (for the variance), min, max. Mergeable (Chan et al.) in a fixed order."""
+
+    __slots__ = ("count", "mean", "m2", "minimum", "maximum")
+
+    def __init__(self, n_tiles: int) -> None:
+        self.count = 0
+        self.mean = np.zeros(n_tiles, dtype=np.float64)
+        self.m2 = np.zeros(n_tiles, dtype=np.float64)
+        self.minimum = np.full(n_tiles, np.inf, dtype=np.float32)
+        self.maximum = np.full(n_tiles, -np.inf, dtype=np.float32)
+
+    def update(self, score: np.ndarray) -> None:
+        self.count += 1
+        x = score.astype(np.float64)
+        delta = x - self.mean
+        self.mean += delta / self.count
+        self.m2 += delta * (x - self.mean)
+        np.minimum(self.minimum, score, out=self.minimum)
+        np.maximum(self.maximum, score, out=self.maximum)
+
+    def merge(self, other: "OnlineStats") -> None:
+        if other.count == 0:
+            return
+        if self.count == 0:
+            self.count, self.mean, self.m2, self.minimum, self.maximum = other.count, other.mean.copy(), other.m2.copy(), other.minimum.copy(), other.maximum.copy()
+            return
+        n = self.count + other.count
+        delta = other.mean - self.mean
+        self.m2 += other.m2 + delta * delta * (self.count * other.count / n)
+        self.mean += delta * (other.count / n)
+        self.count = n
+        np.minimum(self.minimum, other.minimum, out=self.minimum)
+        np.maximum(self.maximum, other.maximum, out=self.maximum)
+
+    @property
+    def variance(self) -> np.ndarray:
+        """Population variance over the runs seen (divide by count)."""
+        return self.m2 / max(self.count, 1)
+
+    def save(self, path) -> None:
+        np.savez(path, count=self.count, mean=self.mean, m2=self.m2, minimum=self.minimum, maximum=self.maximum)
+
+    @classmethod
+    def load(cls, path) -> "OnlineStats":
+        z = np.load(path)
+        s = cls(len(z["mean"]))
+        s.count, s.mean, s.m2, s.minimum, s.maximum = int(z["count"]), z["mean"], z["m2"], z["minimum"], z["maximum"]
+        return s
+
+
+def score_run(x: np.ndarray, mcs: MCSetup, i: int, chunk_rows: int = _S.DEFAULT_CHUNK_ROWS, guard: Optional[AllocGuard] = None) -> np.ndarray:
+    """Scores (float32, one per tile) of run ``i`` for the ``(n, K)`` float32 feature block ``x``. Peak extra memory is one chunk, not the block."""
+    w, target = run_params(mcs, i)
+    if guard is not None:
+        guard.check("run score vector", (x.shape[0],))
+        guard.check("scoring chunk", (min(chunk_rows, x.shape[0]), x.shape[1]))
+    return _S.score_tiles(x, target, mcs.sigma, mcs.family_cols, w, chunk_rows=chunk_rows).score
+
+
+def run_stats(x: np.ndarray, mcs: MCSetup, first_run: int, last_run: int, chunk_rows: int = _S.DEFAULT_CHUNK_ROWS, debug: Optional[bool] = None) -> OnlineStats:
+    """Online statistics over runs ``first_run`` to ``last_run - 1``. Never stores more than one run's scores."""
+    guard = AllocGuard(x.shape[0], last_run - first_run, debug)
+    stats = OnlineStats(x.shape[0])
+    guard.check("online statistics", (x.shape[0],))
+    for i in range(first_run, last_run):
+        stats.update(score_run(x, mcs, i, chunk_rows, guard))
+    return stats
