@@ -75,7 +75,9 @@ def horn_slope_deg(dem: np.ndarray, cell_m: float) -> np.ndarray:
     g, h, i = z[2:, :-2], z[2:, 1:-1], z[2:, 2:]
     dzdx = ((c + 2 * f + i) - (a + 2 * d + g)) / (8.0 * cell_m)
     dzdy = ((g + 2 * h + i) - (a + 2 * b + c)) / (8.0 * cell_m)
-    out[1:-1, 1:-1] = np.degrees(np.arctan(np.hypot(dzdx, dzdy)))
+    centre = np.degrees(np.arctan(np.hypot(dzdx, dzdy)))
+    centre[np.isnan(z[1:-1, 1:-1])] = np.nan  # a missing cell has no slope, although Horn does not read the centre value
+    out[1:-1, 1:-1] = centre
     return out
 
 
@@ -113,11 +115,11 @@ def _closed_form_rms(win: np.ndarray) -> np.ndarray:
     n = win.shape[-1]
     idx = np.arange(n) - (n - 1) / 2.0
     ex2 = (n * n - 1) / 12.0
-    mean = win.mean(axis=(-1, -2))
+    win = win - win.mean(axis=(-1, -2), keepdims=True)  # centre first: avoids float cancellation with heights in the km
     mean_sq = (win**2).mean(axis=(-1, -2))
     exz = (win * idx[None, :]).mean(axis=(-1, -2))  # x runs along columns
     eyz = (win * idx[:, None]).mean(axis=(-1, -2))
-    resid = mean_sq - mean**2 - exz**2 / ex2 - eyz**2 / ex2
+    resid = mean_sq - exz**2 / ex2 - eyz**2 / ex2
     return np.sqrt(np.maximum(resid, 0.0))
 
 
