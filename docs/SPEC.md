@@ -339,6 +339,19 @@ Takes about one minute on an Apple M2.
 * Outputs are not required to be bit-identical (a different BLAS or CPU may move the last bits of a float32); inputs are compared exactly and outputs with tolerance (see the tolerance paragraph under Golden test).
 * **What it does not prove:** the inputs are synthetic, so a pass means the code gives the same answer on two machines (and over time), not that the real data or the real scores are right. Changing any file in `config/` that the scoring uses changes `config_hash` and needs `gsop golden --update`.
 
+### Golden test and its tolerances (issue C30)
+
+`tests/test_golden.py` runs the slice again and compares it with the committed file; it is part of the normal test run (about one minute) and is meant to pass on both Windows and macOS. The tolerances are in `config/run.yaml` (`golden`), not in code:
+
+| Check | Tolerance | Why |
+|---|---|---|
+| input hashes, run count, seed, config hash, which tiles pass the gates | exact | inputs and rules must be identical for the comparison to mean anything |
+| every `score_<profile>` of every gated tile, every Monte Carlo `mc_mean` | absolute difference <= `score_tolerance` = 1e-4 (on the 0 to 100 scale) | float32 sums can differ in the last bits between CPUs (float32 at 100 has a step of 7.6e-6, so 1e-4 is a dozen steps); this margin is a judgement, not measured across machines |
+| each top-1% set (by base score for every profile, and by Monte Carlo mean) | Jaccard >= `top1_jaccard_min` = 0.99 | a top-1% set has only a few tens of tiles in the slice, so 0.99 allows no swap at all: any tile entering or leaving fails |
+
+A failure prints the check, where (body/target/profile), and the size of the difference. If the config hash differs, the expectation is stale (a scoring config file changed): read that failure first.
+**Not yet measured:** the test has been run on one machine (Apple M2). The 1e-4 tolerance is the issue's value, not one derived from a Windows run; the first Windows result decides whether it needs to be wider.
+
 ## Known weaknesses
 
 TODO (grows as results arrive). Start list:
