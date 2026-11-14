@@ -25,3 +25,6 @@ Status values: `open` (nobody has checked), `in progress`, `confirmed` (move the
 | `uv sync` on Windows 11 | `uv.lock`, issue A03 | Checked on macOS arm64 (Apple M2, standing in for the M1 by Yash's decision); not yet on Windows | Anay | open |
 | Earth Engine `getInfo()` probe of every dataset in `docs/PROVENANCE.md` | `scripts/ee_probe.py` | The catalog pages were read, but nobody has run the probe yet because no Earth Engine login exists on the machines used so far | Whoever authenticates Earth Engine (issue B01) | open |
 | DEM vertical datum difference (EGM96 vs EGM2008) at the 56S / 60N seam | `docs/PROVENANCE.md`; issue B07 | Reasoned from the catalog pages, never measured | Whoever runs B07 | open |
+| ASTER GED actual coverage gaps and no-data value | `silica_index`; `docs/SPEC.md` known weaknesses | The catalog page does not describe gaps or a no-data value | Whoever runs the Earth QA (issue B20) | open |
+| ASTER GED date range (2000-2008) against the 2015-2024 MODIS window | `silica_index`; `docs/SPEC.md` | Different epochs are compared; whether land surface emissivity changes enough to matter is not measured | Anay | open |
+| EMIT collection id `NASA/EMIT/L2A/RFL` | `docs/PROVENANCE.md` | Inferred from the page heading; the page has no field labelled collection id, and no licence is stated | Whoever uses EMIT | open |

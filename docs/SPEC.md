@@ -86,3 +86,4 @@ TODO (grows as results arrive). Start list:
 - Earth cannot match polar lighting, gravity, air pressure or cold traps (see the ledger).
 - Match-ability values (the 0 to 1 column in `config/weights.yaml`) are expert judgement, not measured, and are the weakest link in the weights.
 - Known-site coordinates are approximate and unconfirmed.
+- **ASTER GED coverage limits (`silica_index`).** The Earth silica proxy comes from ASTER GED v003, built from clear-sky ASTER data of **2000-2008**, not the 2015-2024 window used for MODIS. Its catalog bounding box is -59 to 80 degrees latitude and the page states no no-data value, so high-latitude, persistently cloudy, icy and open-water tiles may be missing. A tile with no silica value is `unavailable` and the missing-data gate rejects it for any target whose weights use `silica_index`. EMIT (2022 onwards, surface reflectance only, no mineral product in the Earth Engine collection) is not a substitute.
