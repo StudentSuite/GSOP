@@ -1,0 +1,27 @@
+# Purpose profiles (setup prompt section A3, decision D5).
+# Multiply the base family weights by `multipliers`, then renormalise to sum 1.
+# A multiplier naming a family the body does not have is ignored for that body
+# (illumination and cold_dry are Moon families; sunlight and water are Mars families).
+#
+# - Moon has landing_mobility, power_night, ice_resources plus base.
+# - Mars has those three plus geology_life, plus base.
+# - There is no Moon life-detection profile.
+# - `confidence: low` marks results the site must flag.
+base:
+  multipliers: {}
+
+landing_mobility:
+  multipliers: {slope: 2, roughness: 2, relief: 2}
+  extra_gate: {moon: "slope_med <= 8", mars: "slope_p90 <= 30"}
+  confidence: {mars: low}
+
+power_night:
+  multipliers: {illumination: 2.5, sunlight: 2.5, temperature: 2}
+  confidence: {mars: low}
+
+ice_resources:                    # cold_dry is the Moon's water family
+  multipliers: {cold_dry: 2, water: 2, thermal_inertia: 2, temperature: 2}
+
+geology_life:
+  bodies: [mars]
+  multipliers: {composition: 2, water: 1.5}

@@ -98,3 +98,46 @@ def test_alt_weight_sets():
 def test_weights_file_has_header_comment():
     text = (CONFIG_DIR / "weights.yaml").read_text(encoding="utf-8")
     assert "derived = paper_score/sum(paper_score) * matchability, renormalised. Code computes it; do not hard-code." in text
+
+
+# --- A08: purposes.yaml -----------------------------------------------------
+def _parse_purposes():
+    fam, _ = _parse_weights()
+    sink = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        out = C._parse_purposes(read("purposes"), fam, C._Warn(sink))
+    assert sink == []
+    return out
+
+
+def test_purpose_profiles_per_body():
+    p = _parse_purposes()
+    assert sorted(p["moon"]) == sorted(["base", "landing_mobility", "power_night", "ice_resources"])
+    assert sorted(p["mars"]) == sorted(["base", "landing_mobility", "power_night", "ice_resources", "geology_life"])
+    assert not any("life" in name for name in p["moon"]), "no Moon life-detection profile (D5)"
+
+
+def test_purpose_multipliers_and_gates():
+    p = _parse_purposes()
+    assert p["moon"]["base"].multipliers == {}
+    assert p["moon"]["landing_mobility"].multipliers == {"slope": 2, "roughness": 2, "relief": 2}
+    assert p["moon"]["landing_mobility"].extra_gate.text == "slope_med <= 8"
+    assert p["mars"]["landing_mobility"].extra_gate.text == "slope_p90 <= 30"
+    assert p["moon"]["power_night"].multipliers == {"illumination": 2.5, "temperature": 2}
+    assert p["mars"]["power_night"].multipliers == {"sunlight": 2.5, "temperature": 2}
+    assert p["moon"]["ice_resources"].multipliers == {"cold_dry": 2, "thermal_inertia": 2, "temperature": 2}
+    assert p["mars"]["ice_resources"].multipliers == {"water": 2, "thermal_inertia": 2, "temperature": 2}
+    assert p["mars"]["geology_life"].multipliers == {"composition": 2, "water": 1.5}
+    assert p["mars"]["base"].extra_gate is None
+
+
+def test_confidence_low_only_on_mars_landing_and_power():
+    p = _parse_purposes()
+    low = {(b, n) for b in p for n, pur in p[b].items() if pur.confidence == "low"}
+    assert low == {("mars", "landing_mobility"), ("mars", "power_night")}
+
+
+def test_extra_gate_passes():
+    gate = _parse_purposes()["moon"]["landing_mobility"].extra_gate
+    assert gate.passes(8.0) and not gate.passes(8.01)
