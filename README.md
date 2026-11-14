@@ -39,3 +39,17 @@ uv run gsop doctor                                  # must print: earthengine: a
 ```
 
 The project ID is read from `GSOP_EE_PROJECT` (or `earth_engine.project` in `config/run.yaml`, left empty). Never commit a project ID or credentials. `src/gsop/earth/gee_auth.py` prints these steps and exits if the login is missing; it never prompts.
+
+## Earth Engine build runbook (small-region test first)
+
+Run on the machine whose owner has logged in (see above). **Do the Lonar test box before any global export.**
+
+```
+uv run gsop doctor                                                   # earthengine: authenticated
+uv run gsop s2 earth --source gee --region 73.64,17.28,79.38,22.68 --dry-run   # about 600 km around Lonar: lists chunks and bands
+uv run gsop s2 earth --source gee --region 73.64,17.28,79.38,22.68             # starts, polls, retries; resumable
+# download gsop_earth_region_r00_c00.tif from the Drive folder, then:
+uv run python scripts/ee_probe.py --check-raster path/to/gsop_earth_region_r00_c00.tif
+```
+
+`--check-raster` prints one row per band (valid share, min, median, max) and exits 1 on a wrong CRS, a pixel size other than 6000 m, missing or unexpected bands, an all-empty band or values outside plausibility bounds. Write the wall time and the file size on issue B17 and decide go or no-go for the global export. Note that `water_index` is left out until Anay decides (see `docs/SPEC.md`), so the checker expects it to be absent.

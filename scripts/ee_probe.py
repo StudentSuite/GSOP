@@ -59,9 +59,23 @@ def probe(ee: Any, asset_id: str) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("asset_id", help="for example NASA/NASADEM_HGT/001")
+    ap.add_argument("asset_id", nargs="?", help="for example NASA/NASADEM_HGT/001")
     ap.add_argument("--json", action="store_true", help="print JSON instead of a table")
+    ap.add_argument("--check-raster", metavar="PATH", help="check a downloaded export (band names, CRS, 6000 m pixels, ranges) instead of probing an asset")
     args = ap.parse_args(argv)
+
+    if args.check_raster:
+        from gsop.config import load_config
+        from gsop.earth import gee_export
+        from gsop.earth.region_check import check_raster, format_report
+
+        cfg = load_config()
+        bands, _skipped = gee_export.planned_bands(cfg)
+        report = check_raster(Path(args.check_raster), bands, cfg.features.operators.grid_crs, cfg.features.operators.tile_m)
+        print(format_report(report))
+        return 0 if report.ok else 1
+    if not args.asset_id:
+        ap.error("give an asset id, or --check-raster PATH")
 
     from gsop.earth.gee_auth import ensure_ee
 
