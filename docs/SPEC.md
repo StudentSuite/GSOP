@@ -64,9 +64,22 @@ Horn (1981) 3 x 3 finite difference on the 500 m grid. With neighbours
 
 `slope_med` is the median and `slope_p90` the 90th percentile of the slopes of the (up to 144) 500 m cells in the tile. The numpy percentile uses linear interpolation; Earth Engine's `percentile` reducer is histogram based, so small differences are expected (the 10% tolerance of `gsop check-operators` covers them). A tile with more than `max_nan_fraction` (0.2, tunable and unsourced) of its cells missing is NaN: a partial answer is never returned.
 
-### Relief, roughness
+### Relief
 
-Added by issues B06 and B22 (same sections).
+`relief` is the maximum minus the minimum of the 500 m cells (block means, Step 2) inside the tile. Same missing-cell rule as slope.
+
+### Roughness
+
+`rough_a` and `rough_b` are the RMS height after plane removal at two baselines. The baselines are **config, not code** (`baseline_m` of each column in `config/features.yaml`): about 100 m and 1 km, defaults only (`TODO confirm with Vihaan`, listed in `docs/UNVERIFIED.md`).
+
+1. Block-mean the DEM to the baseline B (Step 2 with B in place of 500 m). If the native cell is coarser than B the effective baseline is the native cell size (Mars MOLA, about 463 m, cannot give 100 m: `rough_a` on Mars is then at about 463 m. This is a real mismatch and is flagged, not hidden).
+2. In each tile (n x n cells of size B, n = 6000 / B) fit a plane `z = a + b x + c y` by least squares and take the RMS of the residual: `rough = sqrt(mean((z - plane)^2))`.
+
+Earth Engine does not run a regression. On a full square grid with centred coordinates `x`, `y` (cell index minus (n-1)/2) the constant, `x` and `y` are mutually orthogonal, so the fitted plane has a closed form and
+
+    rough^2 = E[z^2] - E[z]^2 - E[x z]^2 / E[x^2] - E[y z]^2 / E[y^2],      E[x^2] = E[y^2] = (n^2 - 1) / 12
+
+with every `E[.]` a tile mean (`reduceResolution(mean)` of `z`, `z^2`, `x z`, `y z`). This equals the least-squares residual exactly for a tile without missing cells (tested in `tests/test_gee_export.py`). For a tile with some missing cells it is an approximation: the numpy operator fits the plane by least squares on the valid cells only. The difference is expected to be small below the 20% missing-cell limit but has not been measured (`gsop check-operators`, issue B24, compares on one window).
 
 ## Gates (s3)
 
