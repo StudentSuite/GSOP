@@ -25,3 +25,14 @@ Every output row that belongs to a target (scores, Monte Carlo results, discover
 | `gates_summary.json` | one object | `body`, `tiles`, `target_check_mode`, `bit_table`, `reason_codes`, per-target counts (`reasons`, `near`, `passed`, `rejected`, `passed_landing`, `fails_own_gate`, ...), `unscored`, `not_scored_by_target_check`, `validation` |
 
 `reasons` and `near` are bitmasks: water_ice 1, vegetation 2, builtup_cropland 4, landing_mobility_slope 8, missing_data 16 (`bit_table` in the summary). For each target `passed + rejected` equals the number of land tiles. `landing_ok` is false where the landing slope gate fails: such a tile is usable by every profile except `landing_mobility`. The reason codes are `WATER_OR_ICE`, `NDVI_HIGH`, `BUILTUP_OR_CROPLAND`, `LANDING_SLOPE`, `MISSING_DATA`.
+
+## Base scores (stage s4), `results/<body>/`
+
+| File | Content |
+|---|---|
+| `scores_base.parquet` | one row per (target, tile) that passed the base gates, in `tile_id` order. Columns: `target` string, `tile_id` int64, `sim_<family>` float32 per family (similarity of that family, 0 to 1, profile independent), `illumination_match` float32 (the illumination family's similarity alone: Moon `illumination`, Mars `sunlight`; the site shows it separately because Earth cannot match polar lighting), `score_<profile>` float32 per profile (0 to 100; NaN where the tile fails that profile's gate, which only `landing_mobility` has), `fails_own_gate` bool, `own_gate_reasons` string |
+| `sigma_table.json` | per target and column: `sigma`, `target_spread`, `measurement_uncertainty`, `iqr_term`, `winner` |
+| `weights_used.json` | derived family weights, and per target and profile the weights used, `confidence` (`low` for Mars `landing_mobility` and `power_night`), `extra_gate`, and any dropped columns or families |
+| `scores_summary.json` | run time and peak memory per target |
+
+Profiles: Moon `base`, `landing_mobility`, `power_night`, `ice_resources`; Mars the same plus `geology_life`. The layout is wide (one row per target and tile with one score column per profile) because the family similarities do not depend on the profile.

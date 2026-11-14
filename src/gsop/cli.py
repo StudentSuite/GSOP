@@ -220,9 +220,22 @@ app.add_typer(s4, name="s4")
 
 
 @s4.command("score")
-def s4_score(body: Body = BodyOpt, target_check: Optional[str] = TargetCheckOpt) -> None:
-    """Base similarity 0-100 per target x profile."""
-    _stub("s4 score")
+def s4_score(body: Body = BodyOpt, target_check: Optional[str] = TargetCheckOpt,
+             force: bool = typer.Option(False, "--force", help="Rerun even if nothing changed.")) -> None:
+    """Base similarity 0-100 per target x profile (skipped by the runner when inputs and config are unchanged)."""
+    from gsop.config import load_config
+    from gsop.paths import Paths
+    from gsop.runner import Runner, RunnerError
+    from gsop.similarity import SetupError
+    from gsop.stages import s4
+
+    cfg, paths = load_config(), Paths()
+    try:
+        stage = s4.stage(cfg, body.value, paths, target_check, log=typer.echo)
+        Runner(paths.results(body.value), cfg, body=body.value, base_dir=paths.root, log=typer.echo).run([stage], force=["s4"] if force else ())
+    except (SetupError, RunnerError, s4.ScoreError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
 
 
 s5 = typer.Typer(help="s5: Monte Carlo.", no_args_is_help=True)

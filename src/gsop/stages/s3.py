@@ -46,6 +46,26 @@ def gate_columns(cfg: Config, body: str, required: list[str]) -> list[str]:
     return list(dict.fromkeys(cols))
 
 
+def scored_targets(cfg: Config, body: str, profiles: dict, mode: str, log: Callable[[str], None] = print) -> tuple[list, dict]:
+    """``[(name, profile, check)]`` for the targets to score, and ``{"unscored": [...], "not_scored_by_target_check": [...], "validation": [...]}``."""
+    scored, info = [], {"unscored": [], "not_scored_by_target_check": [], "validation": []}
+    for name, profile in profiles.items():
+        if profile.unscored:
+            info["unscored"].append(name)
+            log(f"[{body}] {name}: unscored (no target data), skipped")
+            continue
+        check = TC.check_target(cfg, body, name, profile.values, mode)
+        info["validation"].append(check.validation_entry())
+        if check.fails_own_gate:
+            log(f"[{body}] {name}: fails its own gate ({'; '.join(check.reasons)}); mode {check.mode}")
+        if not check.scored:
+            info["not_scored_by_target_check"].append(name)
+            log(f"[{body}] {name}: not scored (strict target check)")
+            continue
+        scored.append((name, profile, check))
+    return scored, info
+
+
 def run_gates(cfg: Config, body: str, earth_parquet: Path, targets_parquet: Path, out_dir: Path, target_check: Optional[str] = None,
               batch_rows: int = 500_000, log: Callable[[str], None] = print) -> dict:
     out_dir = Path(out_dir)
@@ -59,19 +79,9 @@ def run_gates(cfg: Config, body: str, earth_parquet: Path, targets_parquet: Path
     rej_tmp, pas_tmp = out_dir / ".gates_rejected.parquet.tmp", out_dir / ".gates_passed.parquet.tmp"
     rej_w, pas_w = pq.ParquetWriter(rej_tmp, REJECTED_SCHEMA, compression="zstd"), pq.ParquetWriter(pas_tmp, PASSED_SCHEMA, compression="zstd")
     try:
-        for name, profile in profiles.items():
-            if profile.unscored:
-                summary["unscored"].append(name)
-                log(f"[s3] {name}: unscored (no target data), skipped")
-                continue
-            check = TC.check_target(cfg, body, name, profile.values, mode)
-            summary["validation"].append(check.validation_entry())
-            if check.fails_own_gate:
-                log(f"[s3] {name}: fails its own gate ({'; '.join(check.reasons)}); mode {check.mode}")
-            if not check.scored:
-                summary["not_scored_by_target_check"].append(name)
-                log(f"[s3] {name}: not scored (strict target check)")
-                continue
+        scored, info = scored_targets(cfg, body, profiles, mode, log)
+        summary.update(info)
+        for name, profile, check in scored:
             setup = make_setup(cfg, body, profile)  # raises a clear error when a family has no usable target value
             flags = check.flags()
             counts = {"reasons": {}, "tiles": 0, "rejected": 0, "passed": 0, "passed_landing": 0, "near": {}}
