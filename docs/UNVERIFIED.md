@@ -22,4 +22,4 @@ Status values: `open` (nobody has checked), `in progress`, `confirmed` (move the
 | Moon/Mars source details: Mars climate data set for `t_mean`/`t_coldest`, Diviner coverage near the pole, TES/THEMIS products, SWIM product | `config/features.yaml`; target profiles (s2) | Dataset not chosen or not opened yet | Anay / Shaurya | open |
 | Units not fixed in the setup prompt: `insol_annual`, `dust_index` | `config/features.yaml` | Marked `TODO unit` | Anay | open |
 | Mars exponential pressure-law constants for `air_density` | `config/features.yaml` (`air_density`) | Not sourced; marked `TODO` | Shaurya / Vihaan | open |
-| `uv sync` on Windows 11 and on the Apple M1 Mac | `uv.lock`, issue A03 | Only checked on macOS arm64 so far | Anay (Windows), Shaurya (M1) | open |
+| `uv sync` on Windows 11 | `uv.lock`, issue A03 | Checked on macOS arm64 (Apple M2, standing in for the M1 by Yash's decision); not yet on Windows | Anay | open |
