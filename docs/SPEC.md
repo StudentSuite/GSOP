@@ -163,7 +163,13 @@ with every `E[.]` a tile mean (`reduceResolution(mean)` of `z`, `z^2`, `x z`, `y
 
 ## Gates (s3)
 
-TODO (phase C). Thresholds are in `config/gates.yaml`; the landing_mobility extra gate is in `config/purposes.yaml`. Every rejection logs a stable reason code per tile.
+`src/gsop/gates.py`. Thresholds live in `config/gates.yaml` (never in code); the landing_mobility extra gate lives in `config/purposes.yaml`. A tile can fail several gates, so the result is a per-tile bitmask (bits: water_ice 1, vegetation 2, builtup_cropland 4, landing_mobility_slope 8, missing_data 16); reason codes are the stable strings in `gates.reason_codes` (`WATER_OR_ICE`, `NDVI_HIGH`, `BUILTUP_OR_CROPLAND`, `LANDING_SLOPE`, `MISSING_DATA`).
+
+- `water_ice`: open water or permanent ice covers **more than** 50% of the tile. `vegetation`: median NDVI **above** 0.2. `builtup_cropland`: built-up or farmed land covers **more than** 20%. A value equal to the threshold passes.
+- `landing_mobility_slope`: Moon `slope_med <= 8`, Mars `slope_p90 <= 30` (equal passes). It is evaluated for every tile, but **applied only by the landing_mobility profile**.
+- `missing_data`: any feature column the target's weights use is NaN, **or a gate layer is NaN** (a tile whose water, vegetation or land use is unknown cannot be shown to be an analog candidate, so it is rejected, not waved through).
+- **Near misses.** A tile that *passes* a gate within `near_miss_fraction` (10%) of its threshold gets the matching bit in a second mask, for the discovery cards (for the upper-limit gates: value above 90% of the threshold and not above it).
+- Gating is vectorised and gives the same answer for any chunking of the rows (tested). The Mars *target* check is not a tile gate (it is applied to the target: `gsop.target_check`).
 
 ## Similarity (s4)
 

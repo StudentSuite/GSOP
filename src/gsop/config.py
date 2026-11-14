@@ -495,6 +495,7 @@ def _parse_gates(raw: Any, w: _Warn) -> Gates:
     _num(_need(thr, "water_ice_fraction", where), f"{where}.water_ice_fraction", lo=0, hi=1)
     _num(_need(thr, "ndvi_median", where), f"{where}.ndvi_median", lo=-1, hi=1)
     _num(_need(thr, "builtup_cropland_fraction", where), f"{where}.builtup_cropland_fraction", lo=0, hi=1)
+    _num(_need(thr, "near_miss_fraction", where), f"{where}.near_miss_fraction", lo=0, hi=1)
     mtc = _map(_need(thr, "mars_target_check", where), f"{where}.mars_target_check")
     mw = f"{where}.mars_target_check"
     _choice(_need(mtc, "mode", mw), ("warn", "reject"), f"{mw}.mode")

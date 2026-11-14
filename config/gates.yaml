@@ -16,6 +16,7 @@ thresholds:
   water_ice_fraction: 0.5         # reject if open water or permanent ice covers MORE than this share of the tile
   ndvi_median: 0.2                # reject if median NDVI is ABOVE this
   builtup_cropland_fraction: 0.2  # reject if built-up or farmed land covers MORE than this share of the tile
+  near_miss_fraction: 0.1         # reporting only (not a gate): a tile that PASSES a gate within this share of its threshold is a near miss
   mars_target_check:
     mode: warn                    # warn | reject  (D6: warn by default)
     max_abs_lat_deg: 50           # target must lie within +/- this latitude

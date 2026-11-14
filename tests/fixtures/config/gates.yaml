@@ -2,6 +2,7 @@ thresholds:
   water_ice_fraction: 0.5
   ndvi_median: 0.2
   builtup_cropland_fraction: 0.2
+  near_miss_fraction: 0.1
   mars_target_check: {mode: warn, max_abs_lat_deg: 50, max_elevation_m: 2000, min_thermal_inertia: 100}
 reason_codes:
   water_ice: WATER_OR_ICE
