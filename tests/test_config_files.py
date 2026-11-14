@@ -504,3 +504,21 @@ def test_source_docs_are_present_and_linked():
     readme = (DOCS.parent / "README.md").read_text(encoding="utf-8")
     assert all(f"docs/source/{n}" in readme for n in expected)
     assert "The setup prompt wins" in (src / "README.md").read_text(encoding="utf-8")
+
+
+# --- B04: availability verdicts ------------------------------------------------
+def test_availability_verdicts_are_mirrored_in_features():
+    feats = _parse_features().columns
+    assert feats["water_index"].availability["earth"]["status"] == "usable_with_caveat"
+    assert "DECISION NEEDED" in feats["water_index"].availability["earth"]["reason"]
+    assert feats["dust_index"].availability["earth"]["status"] == "usable_with_caveat"
+    for name, f in feats.items():
+        for body, entry in f.availability.items():
+            assert entry["status"] in C.AVAILABILITY_STATUSES and entry["reason"]
+
+
+def test_provenance_has_three_verdict_lines():
+    text = (DOCS / "PROVENANCE.md").read_text(encoding="utf-8")
+    assert "### Verdicts for the water and dust inputs" in text
+    for needle in ("Permafrost probability: unavailable in Earth Engine", "Aridity: usable with caveat", "Dust: usable with caveat"):
+        assert needle in text

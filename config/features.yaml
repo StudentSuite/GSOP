@@ -6,6 +6,9 @@
 #                               Verified ids go to docs/PROVENANCE.md; unverified ones to docs/UNVERIFIED.md.
 #   evidence_grade              A measured, B computed or same class, C inference or cross-instrument proxy.
 #                               These grades are a first draft and still need review (docs/UNVERIFIED.md).
+#   availability.<body>         optional. status is available | usable_with_caveat | unavailable, with a reason.
+#                               `unavailable` means the missing-data gate must reject the tile (no silent
+#                               substitution). Verdicts come from docs/PROVENANCE.md.
 #   proxy: true                 cross-instrument proxy. water_index and silica_index are the two weakest
 #                               comparisons in the whole index; the site must say so.
 #   uncertainty.<body>          measurement-uncertainty floor for the sigma rule:
@@ -160,6 +163,8 @@ features:
       mars: TODO
 
   dust_index:
+    availability:
+      earth: {status: usable_with_caveat, reason: "Only coarse dust layers exist: MERRA-2 dust extinction AOT (NASA/GSFC/MERRA/aer/2, band DUEXTTAU, 69375 x 55000 m cells, about ten times coarser than a tile) is atmospheric dust, while the Mars side (TES) is surface albedo and dust cover. MODIS MAIAC aerosol is not dust-specific and was not chosen. Verdict B04; if B12 cannot build it the Mars thermal_inertia family uses ti_proxy alone."}
     definition: "How much dust is in the air or on the surface. Mars profile only: second column of the thermal_inertia family, sharing its weight"
     units: "TODO unit not fixed in the setup prompt"
     sources:
@@ -172,6 +177,8 @@ features:
       mars: TODO
 
   water_index:
+    availability:
+      earth: {status: usable_with_caveat, reason: "Aridity is buildable (TerraClimate pr and pet, 4638 m, in Earth Engine). No permafrost-probability layer exists in the Earth Engine catalog; the only 1 km open product found (Obu et al. 2019, PANGAEA DOI 10.1594/PANGAEA.888600) covers the Northern Hemisphere only. DECISION NEEDED (Anay): without a rule for the Southern Hemisphere every southern tile, including McMurdo and the Atacama, would have no water_index and the missing-data gate would reject it. Verdict B04."}
     definition: "0-1 index. Earth: mean of permafrost probability and a 0-1 aridity index. Moon: PSR share of the tile. Mars: SWIM ice consistency. Cross-instrument proxy."
     units: "index 0-1"
     proxy: true

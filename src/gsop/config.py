@@ -37,6 +37,7 @@ CONFIG_FILES = (
 )
 BODIES = ("moon", "mars")
 EVIDENCE_GRADES = ("A", "B", "C")
+AVAILABILITY_STATUSES = ("available", "usable_with_caveat", "unavailable")
 LEDGER_STATUSES = ("Broken", "Partly", "Matchable")
 _EXTRA_GATE_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(<=|>=|<|>)\s*(-?\d+(?:\.\d+)?)\s*$")
 
@@ -255,6 +256,7 @@ class Feature:
     evidence_grade: str
     uncertainty: dict[str, Any]  # body -> mapping or the string "TODO"
     proxy: bool
+    availability: dict[str, dict[str, str]] = field(default_factory=dict)  # body -> {status, reason}
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -583,7 +585,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
     raw = _map(raw, f)
     w.unknown(raw, ("features", "gate_layers"), f)
     cols: dict[str, Feature] = {}
-    known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy")
+    known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy", "availability")
     for name, spec in _map(_need(raw, "features", f), f"{f}: features").items():
         where = f"{f}: features.{name}"
         spec = _map(spec, where)
@@ -607,6 +609,14 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
                 _fail(uw, f"min {lo} is above max {hi}")
             _str(_need(val, "unit", uw), f"{uw}.unit")
             _str(_need(val, "source", uw), f"{uw}.source (use the string TODO instead of the whole mapping if there is none)")
+        avail: dict[str, dict[str, str]] = {}
+        for body, entry in _map(spec.get("availability", {}), f"{where}.availability").items():
+            aw = f"{where}.availability.{body}"
+            _choice(body, ("earth", *BODIES), f"{where}.availability (key)")
+            entry = _map(entry, aw)
+            status = _choice(_need(entry, "status", aw), AVAILABILITY_STATUSES, f"{aw}.status")
+            reason = _str(_need(entry, "reason", aw), f"{aw}.reason")
+            avail[body] = {"status": status, "reason": reason}
         cols[name] = Feature(
             name=name,
             definition=_str(_need(spec, "definition", where), f"{where}.definition"),
@@ -615,6 +625,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
             evidence_grade=_choice(_need(spec, "evidence_grade", where), EVIDENCE_GRADES, f"{where}.evidence_grade"),
             uncertainty=dict(unc),
             proxy=_bool(spec.get("proxy", False), f"{where}.proxy"),
+            availability=avail,
             extra={k: v for k, v in spec.items() if k not in known},
         )
     if not cols:
