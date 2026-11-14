@@ -151,9 +151,26 @@ def s2_earth(
 
 
 @s2.command("targets")
-def s2_targets(body: Body = BodyOpt) -> None:
-    """Build data/processed/targets_{body}.parquet."""
-    _stub("s2 targets")
+def s2_targets(
+    body: Body = BodyOpt,
+    diviner_dir: Optional[Path] = typer.Option(
+        None, "--diviner-dir", help="Moon only: folder with the 144 downloaded Diviner polar seasonal .tab files (otherwise those rows are unavailable)."
+    ),
+    out_dir: Optional[Path] = typer.Option(None, "--out-dir", help="Where to write targets_{body}.parquet/.md (default data/processed)."),
+) -> None:
+    """Build data/processed/targets_{body}.parquet and targets_{body}.md (windowed reads over HTTP, cached in data/raw/)."""
+    from gsop.config import load_config
+    from gsop.targets import TargetError, build_targets
+
+    root = Path(__file__).resolve().parents[2] / "data"
+    cfg = load_config()
+    try:
+        target_dir = out_dir or root / "processed"
+        df = build_targets(cfg, body.value, target_dir, cache_dir=root / "raw" / "targets_cache", diviner_dir=diviner_dir)
+    except TargetError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"wrote {target_dir / f'targets_{body.value}.parquet'} ({len(df)} rows, {int(df.unavailable.sum())} unavailable) and the .md summary")
 
 
 # --- s3 .. s9 ---------------------------------------------------------------
