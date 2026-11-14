@@ -321,6 +321,7 @@ class Features:
     temperature: TemperatureSettings
     water_index: WaterIndexSettings
     silica_index: SilicaSettings
+    air_density: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -640,7 +641,7 @@ def _parse_ledger(raw: Any, purposes: dict, w: _Warn) -> Ledger:
 def _parse_features(raw: Any, w: _Warn) -> Features:
     f = "features.yaml"
     raw = _map(raw, f)
-    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature", "water_index", "silica_index"), f)
+    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature", "water_index", "silica_index", "air_density"), f)
     ow = f"{f}: operators"
     op = _map(_need(raw, "operators", f), ow)
     w.unknown(op, ("grid_crs", "tile_m", "baseline_m", "slope_method", "max_nan_fraction", "earth_dem"), ow)
@@ -721,6 +722,21 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         formula=_choice(_need(si, "formula", sw), ("quartz_index",), f"{sw}.formula"),
         aster_emissivity_scale=_num(_need(si, "aster_emissivity_scale", sw), f"{sw}.aster_emissivity_scale", lo=0),
     )
+    aw = f"{f}: air_density"
+    ad = _map(_need(raw, "air_density", f), aw)
+    w.unknown(ad, ("universal_gas_constant_j_mol_k", "earth", "mars"), aw)
+    _num(_need(ad, "universal_gas_constant_j_mol_k", aw), f"{aw}.universal_gas_constant_j_mol_k", lo=0)
+    earth_keys = ("sea_level_temperature_k", "sea_level_pressure_pa", "lapse_rate_k_per_m",
+                  "specific_gas_constant_j_kg_k", "gravity_m_s2", "max_elevation_m")
+    mars_keys = ("surface_pressure_pa", "scale_height_m", "temperature_k", "molar_mass_g_mol", "reference_elevation_m")
+    for body, keys, model in (("earth", earth_keys, "standard_atmosphere"), ("mars", mars_keys, "exponential")):
+        bw = f"{aw}.{body}"
+        block = _map(_need(ad, body, aw), bw)
+        w.unknown(block, ("model", "source", *keys), bw)
+        _choice(_need(block, "model", bw), (model,), f"{bw}.model")
+        _str(_need(block, "source", bw), f"{bw}.source")
+        for key in keys:
+            _num(_need(block, key, bw), f"{bw}.{key}")
     cols: dict[str, Feature] = {}
     known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy", "availability")
     for name, spec in _map(_need(raw, "features", f), f"{f}: features").items():
@@ -773,7 +789,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         spec = _map(spec, where)
         _str(_need(spec, "definition", where), f"{where}.definition")
         layers[name] = dict(spec)
-    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature, water_index=water_index, silica_index=silica)
+    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature, water_index=water_index, silica_index=silica, air_density=ad)
 
 
 def _parse_run(raw: Any, w: _Warn) -> RunConfig:

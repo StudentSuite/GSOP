@@ -84,6 +84,27 @@ silica_index:
   formula: quartz_index       # Ninomiya et al. 2005 (Remote Sensing of Environment), QI as quoted in arXiv 1107.3499
   aster_emissivity_scale: 0.001   # catalog page: emissivity_band10..14 scale 0.001
 
+# air_density constants (issue B14). Every constant has a source; an unsourced one would say TODO. Moon: not used.
+air_density:
+  universal_gas_constant_j_mol_k: 8.314462618   # SI 2019 exact value (R = N_A * k_B). Not re-checked in this session.
+  earth:
+    model: standard_atmosphere                  # troposphere of the International Standard Atmosphere, valid to 11 km
+    sea_level_temperature_k: 288.15             # Wikipedia, International Standard Atmosphere (read 2026-11-14)
+    sea_level_pressure_pa: 101325               # same page
+    lapse_rate_k_per_m: 0.0065                  # same page: 6.5 K/km
+    specific_gas_constant_j_kg_k: 287.0528      # same page: dry air
+    gravity_m_s2: 9.80665                       # standard gravity (conventional exact value, CGPM 1901); the ISA page gives no number: not re-checked
+    max_elevation_m: 11000                      # above this the troposphere formula does not apply
+    source: "International Standard Atmosphere, en.wikipedia.org/wiki/International_Standard_Atmosphere (read 2026-11-14)"
+  mars:
+    model: exponential                          # isothermal atmosphere: rho = rho0 * exp(-h / H)
+    surface_pressure_pa: 636.0                  # NASA Mars Fact Sheet: 6.36 mb "at mean radius" (varies 4.0-8.7 mb with season)
+    scale_height_m: 11000.0                     # same sheet: 11.0 km
+    temperature_k: 214.0                        # same sheet: average temperature ~214 K
+    molar_mass_g_mol: 43.49                     # same sheet: mean molecular weight 43.49
+    reference_elevation_m: 0.0                  # TODO UNSOURCED: assumes MOLA elevation 0 m is where the stated pressure applies (the sheet says "at mean radius")
+    source: "NASA Mars Fact Sheet, nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html (read 2026-11-14)"
+
 features:
   slope_med:
     definition: "Median over the 6 km tile of slope computed at one shared 500 m baseline"

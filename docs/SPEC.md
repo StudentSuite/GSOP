@@ -30,6 +30,10 @@ TODO (phase B). Fixed by decision D1: 6 km x 6 km tiles on the equal-area grid E
 
 Columns, sources and uncertainty floors are in `config/features.yaml`. `water_index` and `silica_index` are cross-instrument proxies and are the two weakest comparisons in the index. Other feature definitions are added below by the issue that builds each one.
 
+### `air_density` (issue B14, Mars family only)
+
+One pure function (`src/gsop/features_misc.py`), no constants in code; all in `config/features.yaml` block `air_density` with sources. **Earth**: International Standard Atmosphere troposphere, `T = T0 - L h`, `p = p0 (T/T0)^(g/(R L))`, `rho = p / (R T)`, from the DEM elevation, valid to 11 km (tested against 1.225 kg/m3 at sea level and 0.3639 at 11,000 m, both printed on the ISA page). **Mars**: isothermal exponential, `rho = rho0 exp(-(h - h_ref)/H)` with `rho0 = p0 / (R_specific T)`; constants from the NASA Mars Fact Sheet (6.36 mb, scale height 11.0 km, 214 K, molecular weight 43.49), which reproduce the sheet's own surface density (about 0.0155 against 0.016 +/- 0.006 kg/m3). The Mars pressure datum is an open TODO (see `docs/UNVERIFIED.md`). The Moon has no air; it does not use this column.
+
 ### Earth `silica_index` (issue B13)
 
 The weakest cross-instrument comparison with `water_index`. **Earth**: ASTER Quartz Index of Ninomiya et al. (2005, *Remote Sensing of Environment*, as quoted in arXiv 1107.3499), `QI = (e11 * e11) / (e10 * e12)`, with `eN` the emissivity in ASTER thermal-infrared band N from ASTER GED v003 (`emissivity_band10`..`12`, scale 0.001), averaged to the 6 km tile (`src/gsop/silica.py`, `gee_export.silica_bands`). **Direction: higher = more silica-rich.** Quartz-rich rock has emissivity minima near bands 10 and 12 and a higher value at band 11.

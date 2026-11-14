@@ -17,6 +17,10 @@ illumination:
 temperature: {start_year: 2015, end_year: 2024, lst_scale_kelvin: 0.02, min_valid_obs_total: 100, min_valid_obs_per_month: 5, dry_months: 3, dry_season_ratio_max: 0.5, precip_scale: 1.0}
 water_index: {aridity_ai_cap: 1.0, permafrost_asset: null, permafrost_outside_domain: nan}
 silica_index: {formula: quartz_index, aster_emissivity_scale: 0.001}
+air_density:
+  universal_gas_constant_j_mol_k: 8.314462618
+  earth: {model: standard_atmosphere, sea_level_temperature_k: 288.15, sea_level_pressure_pa: 101325, lapse_rate_k_per_m: 0.0065, specific_gas_constant_j_kg_k: 287.0528, gravity_m_s2: 9.80665, max_elevation_m: 11000, source: test}
+  mars: {model: exponential, surface_pressure_pa: 636.0, scale_height_m: 11000.0, temperature_k: 214.0, molar_mass_g_mol: 43.49, reference_elevation_m: 0.0, source: test}
 features:
   slope_med:
     definition: "median slope at 500 m"
