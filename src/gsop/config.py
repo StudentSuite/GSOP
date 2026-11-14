@@ -323,6 +323,7 @@ class Features:
     silica_index: SilicaSettings
     air_density: dict[str, Any]
     land_cover: dict[str, Any]
+    earth_export: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -642,7 +643,7 @@ def _parse_ledger(raw: Any, purposes: dict, w: _Warn) -> Ledger:
 def _parse_features(raw: Any, w: _Warn) -> Features:
     f = "features.yaml"
     raw = _map(raw, f)
-    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature", "water_index", "silica_index", "air_density", "land_cover"), f)
+    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature", "water_index", "silica_index", "air_density", "land_cover", "earth_export"), f)
     ow = f"{f}: operators"
     op = _map(_need(raw, "operators", f), ow)
     w.unknown(op, ("grid_crs", "tile_m", "baseline_m", "slope_method", "max_nan_fraction", "earth_dem"), ow)
@@ -745,6 +746,19 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
     for key in ("water_ice_classes", "builtup_cropland_classes", "ndvi_good_summary_qa"):
         for i, v in enumerate(_list(_need(lc, key, lw), f"{lw}.{key}", non_empty=True)):
             _int(v, f"{lw}.{key}[{i}]", lo=0)
+    xw = f"{f}: earth_export"
+    ex = _map(_need(raw, "earth_export", f), xw)
+    w.unknown(ex, ("chunk_lat_deg", "chunk_lon_deg", "max_retries", "poll_seconds", "destination", "drive_folder", "cloud_bucket"), xw)
+    for key in ("chunk_lat_deg", "chunk_lon_deg"):
+        v = _num(_need(ex, key, xw), f"{xw}.{key}", lo=0.5, hi=180)
+        if abs(180.0 / v - round(180.0 / v)) > 1e-9 or (key == "chunk_lon_deg" and abs(360.0 / v - round(360.0 / v)) > 1e-9):
+            _fail(f"{xw}.{key}", f"{v} must divide 180 (latitude) / 360 (longitude) evenly")
+    _int(_need(ex, "max_retries", xw), f"{xw}.max_retries", lo=0)
+    _num(_need(ex, "poll_seconds", xw), f"{xw}.poll_seconds", lo=0)
+    destination = _choice(_need(ex, "destination", xw), ("drive", "cloud_storage"), f"{xw}.destination")
+    _str(_need(ex, "drive_folder", xw), f"{xw}.drive_folder")
+    if destination == "cloud_storage" and not ex.get("cloud_bucket"):
+        _fail(f"{xw}.cloud_bucket", "required when destination is cloud_storage")
     cols: dict[str, Feature] = {}
     known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy", "availability")
     for name, spec in _map(_need(raw, "features", f), f"{f}: features").items():
@@ -797,7 +811,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         spec = _map(spec, where)
         _str(_need(spec, "definition", where), f"{where}.definition")
         layers[name] = dict(spec)
-    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature, water_index=water_index, silica_index=silica, air_density=ad, land_cover=lc)
+    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature, water_index=water_index, silica_index=silica, air_density=ad, land_cover=lc, earth_export=ex)
 
 
 def _parse_run(raw: Any, w: _Warn) -> RunConfig:

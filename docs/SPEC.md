@@ -30,6 +30,14 @@ TODO (phase B). Fixed by decision D1: 6 km x 6 km tiles on the equal-area grid E
 
 Columns, sources and uncertainty floors are in `config/features.yaml`. `water_index` and `silica_index` are cross-instrument proxies and are the two weakest comparisons in the index. Other feature definitions are added below by the issue that builds each one.
 
+### Earth export orchestration (issue B16)
+
+`gsop s2 earth --source gee [--region W,S,E,N] [--dry-run]`. All feature bands (`gee_export.FEATURE_BUILDERS`, plus `elevation_mean`) form one multi-band image exported at 6000 m on EPSG:6933 as float32 GeoTIFFs. The globe is cut into 15 x 15 degree lat/lon chunks (config `earth_export`, 288 chunks) whose edges are snapped to the global 6 km lattice by one function, so chunks neither overlap nor leave gaps and share one pixel grid (`crsTransform`). Task names are deterministic (`gsop_earth_<chunk id>`). A task ledger (`data/interim/ee_export_ledger.json`, written after every task start) records task ids and states: a restart polls tasks already in flight and never re-exports completed chunks. A failed chunk is retried up to `max_retries` (3) more times, then reported (exit code 1). `--dry-run` lists chunks and bands and starts nothing (no login needed). Groups that are unavailable (currently `water_index`, see above) are left out with a logged reason.
+
+**Expected size** printed before the run is the uncompressed float32 upper bound: about 5.8k x 2.4k tiles x bands x 4 bytes, a few GB for all bands, before ocean and GeoTIFF compression. The plan's "roughly 12 bands well under 1 GB" holds for 12 compressed bands, not for the full list (about 25 bands incl. flags and diagnostics). Compare with the actual size after the first real export.
+
+**Not yet run against Earth Engine.** The orchestration is tested with a fake task API (start, poll, retry, resume); the Earth Engine expressions are not (issue B17 is the first real run).
+
 ### Gate layers (issue B15)
 
 Three Earth-only bands are exported at 6 km and **no threshold is applied at export** (stage s3 does that with `config/gates.yaml`): `gate_water_ice_frac` (share of 500 m MCD12Q1 cells that are water bodies, class 17, or permanent snow and ice, class 15), `gate_ndvi_med` (tile median of the per-pixel 2015-2024 median NDVI of MOD13A2 with SummaryQA good or marginal), `gate_built_crop_frac` (share that is cropland 12, urban and built-up 13, or cropland/natural mosaic 14). Class numbers, the land-cover year (2023) and the QA values are in `config/features.yaml`, block `land_cover` (tunable, unsourced). Reference definitions: `src/gsop/gate_layers.py`. Class 14 is only partly farmed, so the farmland share may be overstated.

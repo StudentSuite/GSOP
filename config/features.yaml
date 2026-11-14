@@ -113,6 +113,16 @@ land_cover:
                                       # TUNABLE: class 14 is only partly farmed and may overstate the fraction; drop it to be stricter
   ndvi_good_summary_qa: [0, 1]        # MOD13A2 SummaryQA kept: 0 good, 1 marginal (2 snow/ice and 3 cloudy are dropped)
 
+# Global export orchestration (issue B16). Chunk size, retries, destination: all tunable, none sourced.
+earth_export:
+  chunk_lat_deg: 15           # the globe is cut into lat/lon blocks so no single export times out
+  chunk_lon_deg: 15
+  max_retries: 3              # a failed chunk is restarted this many times before the run reports it
+  poll_seconds: 60
+  destination: drive          # drive | cloud_storage (ask Anay which one is available)
+  drive_folder: gsop_earth
+  cloud_bucket: null          # set only with destination: cloud_storage
+
 features:
   slope_med:
     definition: "Median over the 6 km tile of slope computed at one shared 500 m baseline"

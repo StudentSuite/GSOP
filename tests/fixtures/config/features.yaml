@@ -22,6 +22,7 @@ air_density:
   earth: {model: standard_atmosphere, sea_level_temperature_k: 288.15, sea_level_pressure_pa: 101325, lapse_rate_k_per_m: 0.0065, specific_gas_constant_j_kg_k: 287.0528, gravity_m_s2: 9.80665, max_elevation_m: 11000, source: test}
   mars: {model: exponential, surface_pressure_pa: 636.0, scale_height_m: 11000.0, temperature_k: 214.0, molar_mass_g_mol: 43.49, reference_elevation_m: 0.0, source: test}
 land_cover: {year: 2023, water_ice_classes: [15, 17], builtup_cropland_classes: [12, 13, 14], ndvi_good_summary_qa: [0, 1]}
+earth_export: {chunk_lat_deg: 15, chunk_lon_deg: 15, max_retries: 3, poll_seconds: 60, destination: drive, drive_folder: gsop_earth, cloud_bucket: null}
 features:
   slope_med:
     definition: "median slope at 500 m"

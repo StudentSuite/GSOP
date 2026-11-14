@@ -415,3 +415,287 @@ def gate_bands(ee: Any, cfg: Config) -> Any:
     ndvi_clim = ndvi_col.map(good_ndvi).median().setDefaultProjection(proj).rename("gate_ndvi_med")
     ndvi6 = ndvi_clim.reduceResolution(reducer=ee.Reducer.median(), maxPixels=int(round(ops.tile_m / 926.0)) ** 2 + 64)
     return water_ice.addBands(ndvi6).addBands(built_crop)
+
+
+# ===========================================================================================================
+# Global export orchestration (issue B16)
+# ===========================================================================================================
+import json  # noqa: E402
+import time  # noqa: E402
+from dataclasses import asdict, dataclass, field  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Callable, Optional, Sequence  # noqa: E402
+
+from gsop.atomic import atomic_write_text  # noqa: E402
+
+ACTIVE_STATES = {"READY", "RUNNING", "CANCEL_REQUESTED"}
+DONE_STATE = "COMPLETED"
+FAILED_STATES = {"FAILED", "CANCELLED"}
+BYTES_PER_VALUE = 4  # float32 export
+
+
+def elevation_band(ee: Any, cfg: Config) -> Any:
+    """Band ``elevation_mean`` (m): tile mean of the 500 m DEM, used later for ``air_density`` and the QA."""
+    ops = cfg.features.operators
+    dem500 = resample_mean(ee, dem_mosaic(ee, cfg), cfg, ops.baseline_m)
+    n = tile_cells(cfg, ops.baseline_m)
+    return dem500.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=n + 16).rename("elevation_mean")
+
+
+# (group name, builder, bands it adds). The band list is known without Earth Engine, so a dry run can print it.
+FEATURE_BUILDERS: list[tuple[str, Callable[[Any, Config], Any], list[str]]] = [
+    ("slope", slope_bands, ["slope_med", "slope_p90"]),
+    ("relief", relief_band, ["relief"]),
+    ("rough_a", lambda ee, cfg: rough_band(ee, cfg, "rough_a"), ["rough_a"]),
+    ("rough_b", lambda ee, cfg: rough_band(ee, cfg, "rough_b"), ["rough_b"]),
+    ("elevation", elevation_band, ["elevation_mean"]),
+    ("temperature", temperature_bands, ["t_mean", "t_coldest", "t_low_obs"]),
+    ("ti_proxy", ti_proxy_bands, ["ti_proxy", "ti_proxy_fallback"]),
+    ("water_index", water_index_bands, ["water_index", "dryness"]),
+    ("dust", dust_bands, ["dust_index_raw"]),
+    ("silica", silica_bands, ["silica_index"]),
+    ("gates", gate_bands, ["gate_water_ice_frac", "gate_ndvi_med", "gate_built_crop_frac"]),
+]
+
+
+def planned_bands(cfg: Config) -> tuple[list[str], dict[str, str]]:
+    """(bands that will be exported, {group: reason} for groups left out because they are unavailable)."""
+    bands: list[str] = []
+    skipped: dict[str, str] = {}
+    for group, _builder, names in FEATURE_BUILDERS:
+        if group == "water_index":
+            status, reason = water_index_status(cfg)
+            if status != "available":
+                skipped[group] = reason
+                continue
+        bands.extend(names)
+    return bands, skipped
+
+
+def assemble_image(ee: Any, cfg: Config, log: Callable[[str], None] = print) -> Any:
+    """One multi-band image with every available feature band."""
+    parts = []
+    for group, builder, _names in FEATURE_BUILDERS:
+        if group == "water_index":
+            status, reason = water_index_status(cfg)
+            if status != "available":
+                log(f"[earth] water_index left out (unavailable): {reason}")
+                continue
+        parts.append(builder(ee, cfg))
+    image = parts[0]
+    for part in parts[1:]:
+        image = image.addBands(part)
+    return image
+
+
+@dataclass
+class Chunk:
+    id: str
+    west: float
+    south: float
+    east: float
+    north: float
+    x0: int  # EPSG:6933 metres, multiples of tile_m
+    y0: int
+    x1: int
+    y1: int
+    tile_m: int
+
+    @property
+    def width_px(self) -> int:
+        return (self.x1 - self.x0) // self.tile_m
+
+    @property
+    def height_px(self) -> int:
+        return (self.y1 - self.y0) // self.tile_m
+
+
+def _frange(start: float, stop: float, step: float) -> list[float]:
+    n = int(round((stop - start) / step))
+    return [start + i * step for i in range(n + 1)]
+
+
+def plan_chunks(cfg: Config, region: Optional[Sequence[float]] = None) -> list[Chunk]:
+    """Cut the globe (or ``region = [west, south, east, north]`` in degrees) into export chunks.
+
+    Chunk edges are snapped to the global 6 km lattice of EPSG:6933 with ONE function used by both neighbours, so
+    chunks never overlap or leave gaps and every chunk shares the same pixel grid (``crsTransform``). EPSG:6933 is
+    a cylindrical equal-area projection, so a lon/lat rectangle maps to a rectangle.
+    """
+    from pyproj import Transformer  # noqa: PLC0415
+
+    tile = int(cfg.features.operators.tile_m)
+    ex = cfg.features.earth_export
+    dlat, dlon = float(ex["chunk_lat_deg"]), float(ex["chunk_lon_deg"])
+    to6933 = Transformer.from_crs("EPSG:4326", cfg.features.operators.grid_crs, always_xy=True)
+
+    def xs(lon: float) -> float:
+        return to6933.transform(lon, 0.0)[0]
+
+    def ys(lat: float) -> float:
+        return to6933.transform(0.0, lat)[1]
+
+    def snap(value: float, mode: str) -> int:
+        q = value / tile
+        return int({"floor": math.floor(q), "ceil": math.ceil(q), "round": round(q)}[mode] * tile)
+
+    if region is None:
+        lons, lats = _frange(-180.0, 180.0, dlon), _frange(-90.0, 90.0, dlat)
+        label = "g"
+    else:
+        w, s, e, n = region
+        if not (-180 <= w < e <= 180 and -90 <= s < n <= 90):
+            raise ValueError("region must be [west, south, east, north] in degrees with west < east and south < north")
+        lons, lats, label = [w, e], [s, n], "region"
+    x_edges = [snap(xs(v), "round") for v in lons]
+    y_edges = [snap(ys(v), "round") for v in lats]
+    x_edges[0], x_edges[-1] = snap(xs(lons[0]), "floor"), snap(xs(lons[-1]), "ceil")
+    y_edges[0], y_edges[-1] = snap(ys(lats[0]), "floor"), snap(ys(lats[-1]), "ceil")
+    chunks: list[Chunk] = []
+    for j in range(len(lats) - 1):
+        for i in range(len(lons) - 1):
+            chunks.append(Chunk(f"{label}_r{j:02d}_c{i:02d}", lons[i], lats[j], lons[i + 1], lats[j + 1],
+                                x_edges[i], y_edges[j], x_edges[i + 1], y_edges[j + 1], tile))
+    return chunks
+
+
+def expected_size_bytes(chunks: Sequence[Chunk], n_bands: int) -> int:
+    """Uncompressed float32 size of every chunk's pixels (an upper bound: GeoTIFF compression and ocean shrink it)."""
+    return sum(c.width_px * c.height_px for c in chunks) * n_bands * BYTES_PER_VALUE
+
+
+# --- task ledger -------------------------------------------------------------------------------------------
+def task_name(chunk_id: str) -> str:
+    return f"gsop_earth_{chunk_id}"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def load_ledger(path: Path) -> dict[str, dict]:
+    path = Path(path)
+    if not path.is_file():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8")).get("chunks", {})
+
+
+def save_ledger(path: Path, chunks: dict[str, dict]) -> None:
+    atomic_write_text(path, json.dumps({"schema_version": 1, "updated": _now(), "chunks": chunks}, indent=2, sort_keys=True) + "\n")
+
+
+def export_kwargs(cfg: Config, chunk: Chunk, bands: Sequence[str]) -> dict[str, Any]:
+    ex = cfg.features.earth_export
+    ops = cfg.features.operators
+    kw: dict[str, Any] = {
+        "description": task_name(chunk.id),
+        "fileNamePrefix": task_name(chunk.id),
+        "crs": ops.grid_crs,
+        "crsTransform": [ops.tile_m, 0, chunk.x0, 0, -ops.tile_m, chunk.y1],
+        "maxPixels": 10**9,
+        "fileFormat": "GeoTIFF",
+    }
+    if ex["destination"] == "drive":
+        kw["folder"] = ex["drive_folder"]
+    else:
+        kw["bucket"] = ex["cloud_bucket"]
+    return kw
+
+
+def region_geometry(ee: Any, chunk: Chunk, grid_crs: str) -> Any:
+    return ee.Geometry.Rectangle([chunk.x0, chunk.y0, chunk.x1, chunk.y1], grid_crs, False)
+
+
+def start_chunk(ee: Any, cfg: Config, image: Any, chunk: Chunk, bands: Sequence[str]) -> str:
+    kw = export_kwargs(cfg, chunk, bands)
+    kw["image"] = image.select(list(bands)).toFloat()
+    kw["region"] = region_geometry(ee, chunk, cfg.features.operators.grid_crs)
+    export = ee.batch.Export.image
+    task = export.toDrive(**kw) if cfg.features.earth_export["destination"] == "drive" else export.toCloudStorage(**kw)
+    task.start()
+    return task.id
+
+
+@dataclass
+class ExportReport:
+    total: int = 0
+    completed: list = field(default_factory=list)
+    failed: list = field(default_factory=list)
+    started: list = field(default_factory=list)
+    skipped_done: list = field(default_factory=list)
+    skipped_bands: dict = field(default_factory=dict)
+    expected_bytes: int = 0
+    dry_run: bool = False
+
+
+def run_export(
+    ee: Any,
+    cfg: Config,
+    ledger_path: Path,
+    region: Optional[Sequence[float]] = None,
+    dry_run: bool = False,
+    image: Any = None,
+    sleep: Callable[[float], None] = time.sleep,
+    log: Callable[[str], None] = print,
+    max_polls: Optional[int] = None,
+) -> ExportReport:
+    """Start, poll and retry the chunk exports; a restart resumes from ``ledger_path`` and never re-exports done chunks."""
+    ex = cfg.features.earth_export
+    chunks = plan_chunks(cfg, region)
+    bands, skipped = planned_bands(cfg)
+    report = ExportReport(total=len(chunks), skipped_bands=skipped, dry_run=dry_run,
+                          expected_bytes=expected_size_bytes(chunks, len(bands)))
+    log(f"[earth] {len(chunks)} chunk(s), {len(bands)} bands: {', '.join(bands)}")
+    for group, reason in skipped.items():
+        log(f"[earth] group '{group}' will NOT be exported: {reason}")
+    log(f"[earth] expected size up to {report.expected_bytes / 1e6:,.0f} MB uncompressed float32 (compare with the actual after the export)")
+    if dry_run:
+        for c in chunks:
+            log(f"[earth] dry run: would export {task_name(c.id)}  lon {c.west}..{c.east} lat {c.south}..{c.north}  {c.width_px}x{c.height_px} px")
+        return report
+
+    ledger = load_ledger(ledger_path)
+    for c in chunks:
+        ledger.setdefault(c.id, {"state": "PENDING", "attempts": 0, "task_id": None, "name": task_name(c.id)})
+    save_ledger(ledger_path, ledger)
+    if image is None:
+        image = assemble_image(ee, cfg, log)
+
+    polls = 0
+    while True:
+        # 1. refresh the state of tasks that are in flight
+        in_flight = [c for c in chunks if ledger[c.id]["state"] in ACTIVE_STATES and ledger[c.id]["task_id"]]
+        for c in in_flight:
+            status = ee.data.getTaskStatus([ledger[c.id]["task_id"]])[0]
+            ledger[c.id]["state"] = status.get("state", "UNKNOWN")
+            if ledger[c.id]["state"] == DONE_STATE:
+                ledger[c.id]["finished"] = _now()
+                log(f"[earth] {c.id}: completed")
+            elif ledger[c.id]["state"] in FAILED_STATES:
+                ledger[c.id]["error"] = status.get("error_message", "")
+                log(f"[earth] {c.id}: {ledger[c.id]['state']} {ledger[c.id].get('error', '')}")
+        # 2. start pending chunks and retry failed ones (up to max_retries retries)
+        for c in chunks:
+            entry = ledger[c.id]
+            retry = entry["state"] in FAILED_STATES and entry["attempts"] <= ex["max_retries"]
+            if entry["state"] == "PENDING" or retry:
+                entry["task_id"] = start_chunk(ee, cfg, image, c, bands)
+                entry["state"], entry["attempts"], entry["started"] = "READY", entry["attempts"] + 1, _now()
+                report.started.append(c.id)
+                log(f"[earth] {c.id}: started (attempt {entry['attempts']}) task {entry['task_id']}")
+            save_ledger(ledger_path, ledger)  # after every start, so a kill cannot lose a task id
+        save_ledger(ledger_path, ledger)
+        states = [ledger[c.id]["state"] for c in chunks]
+        gave_up = [c.id for c in chunks if ledger[c.id]["state"] in FAILED_STATES and ledger[c.id]["attempts"] > ex["max_retries"]]
+        if all(s == DONE_STATE for s in states):
+            break
+        if all(s == DONE_STATE or c.id in gave_up for s, c in zip(states, chunks)):
+            break
+        polls += 1
+        if max_polls is not None and polls >= max_polls:
+            break
+        sleep(float(ex["poll_seconds"]))
+    report.completed = [c.id for c in chunks if ledger[c.id]["state"] == DONE_STATE]
+    report.failed = [c.id for c in chunks if ledger[c.id]["state"] in FAILED_STATES]
+    return report

@@ -88,9 +88,36 @@ def s2_earth(
     source: EarthSource = typer.Option(
         EarthSource.gee, "--source", help="Where Earth features come from."
     ),
+    region: Optional[str] = typer.Option(
+        None, "--region", help="Test region 'west,south,east,north' in degrees instead of the whole globe."
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="List chunks and bands without starting any export."),
 ) -> None:
-    """Build data/processed/earth_features_6km.parquet."""
-    _stub("s2 earth")
+    """Build data/processed/earth_features_6km.parquet (Earth Engine route: start/poll the chunk exports)."""
+    if source is not EarthSource.gee:
+        _stub("s2 earth --source local")
+    from gsop.config import load_config
+    from gsop.earth import gee_export
+
+    cfg = load_config()
+    box = None
+    if region is not None:
+        try:
+            box = [float(v) for v in region.split(",")]
+            assert len(box) == 4
+        except (ValueError, AssertionError):
+            typer.echo("--region must be 'west,south,east,north' in degrees", err=True)
+            raise typer.Exit(2)
+    ledger = Path(__file__).resolve().parents[2] / "data" / "interim" / ("ee_export_ledger_region.json" if box else "ee_export_ledger.json")
+    ee = None
+    if not dry_run:
+        from gsop.earth.gee_auth import ensure_ee
+
+        ee = ensure_ee(cfg=cfg)
+    report = gee_export.run_export(ee, cfg, ledger, region=box, dry_run=dry_run)
+    if not dry_run and report.failed:
+        typer.echo(f"{len(report.failed)} chunk(s) failed after retries: {', '.join(report.failed)}", err=True)
+        raise typer.Exit(1)
 
 
 @s2.command("targets")
