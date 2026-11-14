@@ -175,7 +175,13 @@ TODO (phase C). `sigma_k = max(target_spread_k, measurement_uncertainty_k, 0.25 
 
 ## Weights (s4)
 
-TODO (phase C). `derived = (paper_score / sum(paper_score)) * matchability`, rescaled to sum 1. Decision D3: the derived Moon thermal-inertia weight (0.019) drives the run; the published 0.03 is kept for comparison.
+`src/gsop/weights.py`. **Derivation:** `weight_f = (paper_score_f / sum(paper_score)) * matchability_f`, rescaled so the weights sum to 1 (no weight is typed anywhere in code; the inputs are `paper_score` and `matchability` in `config/weights.yaml`). Result, pinned by tests to 4 decimals: Moon slope 0.3042, illumination 0.1806, cold_dry 0.1483, roughness 0.1198, relief 0.1141, temperature 0.0608, composition 0.0532, thermal_inertia 0.0190; Mars composition 0.2289, water 0.1937, sunlight 0.1497, slope 0.1132, thermal_inertia 0.0906, roughness 0.0792, relief 0.0755, elevation_density 0.0377, temperature 0.0314. Each is within 0.012 of the published number.
+
+**Decision D3.** The Moon `thermal_inertia` derived weight 0.019 drives the run; the published 0.03 is a rounding-up artifact so the published column sums to 1. 0.019 sits just *below* its own Monte Carlo range [0.02, 0.04]: the range is the sampling range for the Monte Carlo, the derived weight is the base score, and the one case is explicitly excluded from the range test.
+
+**Column weights.** A family's weight is split equally over its columns because the family score is the mean of its columns' similarities.
+
+**Alternative weight sets (`alt_weight_sets`, issue C06).** Each sums to 1 and is run once (no Monte Carlo) as a sensitivity check. `liu2025` (Moon: roughness 0.39, slope 0.26, cold_dry 0.16, illumination 0.11, composition 0.08) and `mashal2025` (Mars: composition 0.75, water 0.125, sunlight 0.125) do not name every family: **families not named get weight 0**, and the set is then renormalised only if the listed numbers do not already sum to 1 (they do, so nothing is rescaled). That means Liu's set zeroes relief, temperature and thermal_inertia, and Mashal's zeroes six of the nine Mars families. `no_illumination` (Moon, decision D4) is the primary with `illumination` set to 0 and the rest renormalised, so ratios among the other families are unchanged. `equal` gives every family 1/n. `no_illumination` is refused for Mars.
 
 ## Purposes (s4)
 

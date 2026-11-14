@@ -31,4 +31,5 @@ def test_column_weights_split_a_family_equally_and_sum_to_one():
 def test_no_weight_literal_appears_in_the_code():
     tree = ast.parse((ROOT / "src" / "gsop" / "weights.py").read_text(encoding="utf-8"))
     numbers = {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)) and not isinstance(n.value, bool)}
-    assert numbers <= {0.0, 1.0}, numbers
+    # 0, 1 and the single named sum tolerance; no family weight, range or multiplier appears
+    assert numbers <= {0, 0.0, 1.0, 1e-09}, numbers

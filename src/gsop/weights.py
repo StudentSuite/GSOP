@@ -52,3 +52,59 @@ def column_weights(weights: dict[str, float], columns: dict[str, tuple[str, ...]
         for c in cols:
             out[c] = out.get(c, 0.0) + w / len(cols)
     return out
+
+
+# ===========================================================================================================
+# Alternative weight sets (issue C06): the sensitivity check that our own weights are not driving the result
+# ===========================================================================================================
+SUM_TOLERANCE = 1e-9  # a published set whose weights sum to 1 within this is not "renormalised"
+RULE_EQUAL = "all families equal"
+RULE_NO_ILLUMINATION = "primary with illumination=0, renormalised"  # decision D4 (Moon)
+ILLUMINATION_FAMILY = "illumination"
+
+
+class AltWeightError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class AltSet:
+    name: str
+    weights: dict[str, float]  # every family of the body appears; sums to 1
+    zeroed: tuple[str, ...]  # families that got weight 0 (absent from a published set, or switched off by a rule)
+    renormalised: bool  # True if the listed weights did not sum to 1 and were rescaled
+    definition: str
+
+
+def _explicit(listed: dict[str, float], families: list[str]) -> tuple[dict[str, float], tuple[str, ...], bool]:
+    """Published sets (Liu 2025, Mashal 2025) do not name every family: missing ones get 0, then the rest are renormalised to sum 1."""
+    out = {f: float(listed.get(f, 0.0)) for f in families}
+    zeroed = tuple(f for f in families if f not in listed)
+    total = sum(out.values())
+    if not total > 0:
+        raise AltWeightError("an alternative weight set has no positive weight")
+    renorm = abs(total - 1.0) > SUM_TOLERANCE
+    return {f: w / total for f, w in out.items()}, zeroed, renorm
+
+
+def alt_weight_sets(cfg: Config, body: str) -> dict[str, AltSet]:
+    """Every alternative set configured for ``body`` (``alt_weight_sets`` in ``config/weights.yaml``), each summing to 1."""
+    derived = weight_vector(derive_weights(cfg, body))
+    families = list(derived)
+    out: dict[str, AltSet] = {}
+    for name, spec in cfg.alt_weight_sets(body).items():
+        if spec.weights is not None:
+            w, zeroed, renorm = _explicit(spec.weights, families)
+            out[name] = AltSet(name, w, zeroed, renorm, "published weights; families not named get 0, then renormalised if the sum is not 1")
+        elif spec.rule == RULE_EQUAL:
+            out[name] = AltSet(name, {f: 1.0 / len(families) for f in families}, (), False, RULE_EQUAL)
+        elif spec.rule == RULE_NO_ILLUMINATION:
+            if ILLUMINATION_FAMILY not in derived:
+                raise AltWeightError(f"{body} has no '{ILLUMINATION_FAMILY}' family: the no_illumination variant is a Moon sensitivity run (decision D4)")
+            rest = {f: w for f, w in derived.items() if f != ILLUMINATION_FAMILY}
+            total = sum(rest.values())
+            w = {f: (rest[f] / total if f in rest else 0.0) for f in families}
+            out[name] = AltSet(name, w, (ILLUMINATION_FAMILY,), True, RULE_NO_ILLUMINATION)
+        else:
+            raise AltWeightError(f"{body}.{name}: unknown rule {spec.rule!r} (known: {RULE_EQUAL!r}, {RULE_NO_ILLUMINATION!r})")
+    return out
