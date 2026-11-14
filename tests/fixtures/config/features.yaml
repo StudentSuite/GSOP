@@ -30,6 +30,7 @@ features:
     units: deg
     sources: {earth: {name: "DEM", lead: true}, moon: {name: LOLA}, mars: {name: MOLA}}
     evidence_grade: A
+    earth_bias: TODO
     uncertainty:
       moon: {min: 1.5, max: 2.5, unit: deg, source: "Barker 2021"}
       earth: TODO
@@ -38,12 +39,14 @@ features:
     units: deg
     sources: {earth: {name: "DEM", lead: true}, moon: {name: LOLA}, mars: {name: MOLA}}
     evidence_grade: A
+    earth_bias: TODO
     uncertainty: {earth: TODO}
   sun_max_elev:
     definition: "highest Sun elevation"
     units: deg
     sources: {earth: {name: computed}, moon: {name: computed}, mars: {name: computed}}
     evidence_grade: B
+    earth_bias: TODO
     uncertainty: {earth: TODO}
     proxy: true
 gate_layers:

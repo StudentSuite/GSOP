@@ -9,6 +9,10 @@
 #   availability.<body>         optional. status is available | usable_with_caveat | unavailable, with a reason.
 #                               `unavailable` means the missing-data gate must reject the tile (no silent
 #                               substitution). Verdicts come from docs/PROVENANCE.md.
+#   earth_bias                  systematic bias of the EARTH value of a column, used by the Monte Carlo data jitter (a per-column
+#                               offset drawn once per run from N(0, bias)). Same rule as `uncertainty`: a sourced {min, max, unit,
+#                               source} range or the string TODO. Every entry is TODO today: no published global bias estimate was
+#                               found for any of the Earth layers (listed in docs/UNVERIFIED.md).
 #   proxy: true                 cross-instrument proxy. water_index and silica_index are the two weakest
 #                               comparisons in the whole index; the site must say so.
 #   uncertainty.<body>          measurement-uncertainty floor for the sigma rule:
@@ -138,6 +142,7 @@ features:
       moon: {name: LOLA}
       mars: {name: MOLA}
     evidence_grade: A
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       moon: {min: 1.5, max: 2.5, unit: deg, source: "Barker 2021 (south pole landing DEMs, 5 m per pixel; slope error)"}
@@ -151,6 +156,7 @@ features:
       moon: {name: LOLA}
       mars: {name: MOLA}
     evidence_grade: A
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       moon: {min: 1.5, max: 2.5, unit: deg, source: "Barker 2021 (south pole landing DEMs, 5 m per pixel; slope error)"}
@@ -164,10 +170,11 @@ features:
       moon: {name: LOLA}
       mars: {name: MOLA}
     evidence_grade: A
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       moon: {min: 0.3, max: 0.5, unit: m, source: "Barker 2021 (south pole landing DEMs, 5 m per pixel; height error)"}
-      mars: TODO
+      mars: {min: 1.0, max: 3.0, unit: m, source: "USGS Astropedia MOLA DEM 463m page: about 1 m accuracy in radius per point; total elevation uncertainty at least +-3 m because of the areoid (+-1.8 m global). The areoid error largely cancels in a height DIFFERENCE, so this overstates relief and roughness; track gaps of 1-2 km are interpolated and not included"}
 
   rough_a:
     definition: "RMS height after plane removal at the shorter baseline"
@@ -178,10 +185,11 @@ features:
       moon: {name: LOLA}
       mars: {name: MOLA}
     evidence_grade: A
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       moon: {min: 0.3, max: 0.5, unit: m, source: "Barker 2021 (south pole landing DEMs, 5 m per pixel; height error)"}
-      mars: TODO
+      mars: {min: 1.0, max: 3.0, unit: m, source: "USGS Astropedia MOLA DEM 463m page: about 1 m accuracy in radius per point; total elevation uncertainty at least +-3 m because of the areoid (+-1.8 m global). The areoid error largely cancels in a height DIFFERENCE, so this overstates relief and roughness; track gaps of 1-2 km are interpolated and not included"}
 
   rough_b:
     definition: "RMS height after plane removal at the longer baseline"
@@ -192,10 +200,11 @@ features:
       moon: {name: LOLA}
       mars: {name: MOLA}
     evidence_grade: A
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       moon: {min: 0.3, max: 0.5, unit: m, source: "Barker 2021 (south pole landing DEMs, 5 m per pixel; height error)"}
-      mars: TODO
+      mars: {min: 1.0, max: 3.0, unit: m, source: "USGS Astropedia MOLA DEM 463m page: about 1 m accuracy in radius per point; total elevation uncertainty at least +-3 m because of the areoid (+-1.8 m global). The areoid error largely cancels in a height DIFFERENCE, so this overstates relief and roughness; track gaps of 1-2 km are interpolated and not included"}
 
   sun_max_elev:
     definition: "Highest Sun elevation over the year, computed from latitude, obliquity and slope/aspect"
@@ -205,6 +214,7 @@ features:
       moon: {name: "computed; Glaser 2018 values for the two lunar sites. Pole targets: Sun within about 1.5 deg of the horizon all year (sun_max_elev ~ 1.5)"}
       mars: {name: "computed from latitude, obliquity, slope/aspect"}
     evidence_grade: B
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       moon: TODO
@@ -218,6 +228,7 @@ features:
       moon: {name: "computed; Glaser 2018 values for the two lunar sites. Pole targets: sun_low_share ~ 1.0"}
       mars: {name: "computed from latitude, obliquity, slope/aspect"}
     evidence_grade: B
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       moon: TODO
@@ -231,6 +242,7 @@ features:
       moon: null
       mars: {name: "computed from latitude, obliquity, slope/aspect"}
     evidence_grade: B
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       mars: TODO
@@ -243,8 +255,9 @@ features:
       moon: {name: "Diviner (not available at the pole; flag)"}
       mars: {name: "Mars climate data (dataset not chosen yet)", lead: true}
     evidence_grade: A
+    earth_bias: TODO
     uncertainty:
-      earth: TODO
+      earth: {min: 1.0, max: 3.0, unit: K, source: "MOD11A2 catalog page, QC bits 6-7 LST error classes: <=1 K, <=2 K, <=3 K, >3 K. Indicative only: these are per-pixel QA classes, and the export keeps pixels by QC bits 0-1 only, so the real error of the climatology is not established"}
       moon: TODO
       mars: TODO
 
@@ -256,8 +269,9 @@ features:
       moon: {name: "Diviner (not available at the pole; flag)"}
       mars: {name: "Mars climate data (dataset not chosen yet)", lead: true}
     evidence_grade: A
+    earth_bias: TODO
     uncertainty:
-      earth: TODO
+      earth: {min: 1.0, max: 3.0, unit: K, source: "MOD11A2 catalog page, QC bits 6-7 LST error classes: <=1 K, <=2 K, <=3 K, >3 K. Indicative only: these are per-pixel QA classes, and the export keeps pixels by QC bits 0-1 only, so the real error of the climatology is not established"}
       moon: TODO
       mars: TODO
 
@@ -269,6 +283,7 @@ features:
       moon: {name: Diviner}
       mars: {name: THEMIS}
     evidence_grade: B
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       moon: TODO
@@ -284,6 +299,7 @@ features:
       moon: null
       mars: {name: "TES albedo and dust cover"}
     evidence_grade: C
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       mars: TODO
@@ -299,6 +315,7 @@ features:
       moon: {name: "PSR share of the tile"}
       mars: {name: "SWIM ice consistency (swim.psi.edu)"}
     evidence_grade: C
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       moon: TODO
@@ -313,6 +330,7 @@ features:
       moon: {name: "Diviner Christiansen feature"}
       mars: {name: TES}
     evidence_grade: C
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       moon: TODO
@@ -326,6 +344,7 @@ features:
       moon: null
       mars: {name: "exponential pressure law on MOLA elevation. TODO constants are not sourced yet"}
     evidence_grade: B
+    earth_bias: TODO
     uncertainty:
       earth: TODO
       mars: TODO

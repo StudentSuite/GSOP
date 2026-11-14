@@ -522,3 +522,54 @@ def test_provenance_has_three_verdict_lines():
     assert "### Verdicts for the water and dust inputs" in text
     for needle in ("Permafrost probability: unavailable in Earth Engine", "Aridity: usable with caveat", "Dust: usable with caveat"):
         assert needle in text
+
+
+# --- B33: uncertainty values: sourced or TODO, nothing in between --------------------------------------------------
+def _unc_entries():
+    feats = _parse_features().columns
+    for name, f in feats.items():
+        for body, src in f.sources.items():
+            if src is not None:
+                yield name, body, f.uncertainty.get(body)
+
+
+def test_every_column_has_a_sourced_floor_or_an_explicit_todo_for_every_body():
+    n_sourced = n_todo = 0
+    for name, body, entry in _unc_entries():
+        assert entry is not None, f"{name}.{body}: no uncertainty entry"
+        if entry == "TODO":
+            n_todo += 1
+        else:
+            n_sourced += 1
+            assert entry["source"].strip() and entry["unit"].strip() and 0 <= entry["min"] <= entry["max"], (name, body)
+    # sourced: Moon slope_med, slope_p90, relief, rough_a, rough_b (Barker 2021); Mars relief, rough_a, rough_b (MOLA); Earth t_mean, t_coldest (QC classes)
+    assert n_sourced == 10 and n_todo == 32
+
+
+def test_the_newly_sourced_floors_are_exactly_what_the_pages_say():
+    feats = _parse_features().columns
+    for col in ("relief", "rough_a", "rough_b"):
+        mars = feats[col].uncertainty["mars"]
+        assert (mars["min"], mars["max"], mars["unit"]) == (1.0, 3.0, "m") and "MOLA" in mars["source"] and "areoid" in mars["source"]
+    for col in ("t_mean", "t_coldest"):
+        earth = feats[col].uncertainty["earth"]
+        assert (earth["min"], earth["max"], earth["unit"]) == (1.0, 3.0, "K") and "QC bits 6-7" in earth["source"] and "Indicative only" in earth["source"]
+    assert feats["slope_med"].uncertainty["mars"] == "TODO"  # no published MOLA slope error was found
+
+
+def test_every_column_has_an_earth_bias_entry_and_none_is_invented():
+    feats = _parse_features().columns
+    assert set(feats) == set(A10_COLUMNS)
+    for name, f in feats.items():
+        assert f.earth_bias == "TODO", name  # no published global bias estimate was found for any Earth layer
+
+
+def test_unverified_lists_every_todo_column():
+    text = (DOCS / "UNVERIFIED.md").read_text(encoding="utf-8")
+    section = text[text.index("Measurement-uncertainty TODO list"):]
+    section = section.split("\n| ")[0]
+    for name, body, entry in _unc_entries():
+        if entry == "TODO":
+            assert f"{name}.{body}" in section, f"{name}.{body} missing from the UNVERIFIED TODO list"
+    for name in A10_COLUMNS:
+        assert f"{name}.earth_bias" in section, f"{name}.earth_bias"

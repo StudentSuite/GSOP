@@ -257,6 +257,7 @@ class Feature:
     uncertainty: dict[str, Any]  # body -> mapping or the string "TODO"
     proxy: bool
     availability: dict[str, dict[str, str]] = field(default_factory=dict)  # body -> {status, reason}
+    earth_bias: Any = "TODO"  # "TODO" or {min, max, unit, source}: systematic Earth bias used by the Monte Carlo data jitter
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -769,7 +770,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
     if len(dp) != 2 or not 0 <= _num(dp[0], f"{bw2}.dust_percentiles[0]") < _num(dp[1], f"{bw2}.dust_percentiles[1]") <= 100:
         _fail(f"{bw2}.dust_percentiles", "must be [low, high] with 0 <= low < high <= 100")
     cols: dict[str, Feature] = {}
-    known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy", "availability")
+    known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "earth_bias", "proxy", "availability")
     for name, spec in _map(_need(raw, "features", f), f"{f}: features").items():
         where = f"{f}: features.{name}"
         spec = _map(spec, where)
@@ -793,6 +794,15 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
                 _fail(uw, f"min {lo} is above max {hi}")
             _str(_need(val, "unit", uw), f"{uw}.unit")
             _str(_need(val, "source", uw), f"{uw}.source (use the string TODO instead of the whole mapping if there is none)")
+        bias = _need(spec, "earth_bias", where)  # systematic Earth bias for the Monte Carlo data jitter: sourced range or TODO
+        if bias != "TODO":
+            bw = f"{where}.earth_bias"
+            bias = _map(bias, bw)
+            lo, hi = _num(_need(bias, "min", bw), f"{bw}.min", lo=0), _num(_need(bias, "max", bw), f"{bw}.max", lo=0)
+            if lo > hi:
+                _fail(bw, f"min {lo} is above max {hi}")
+            _str(_need(bias, "unit", bw), f"{bw}.unit")
+            _str(_need(bias, "source", bw), f"{bw}.source")
         avail: dict[str, dict[str, str]] = {}
         for body, entry in _map(spec.get("availability", {}), f"{where}.availability").items():
             aw = f"{where}.availability.{body}"
@@ -810,6 +820,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
             uncertainty=dict(unc),
             proxy=_bool(spec.get("proxy", False), f"{where}.proxy"),
             availability=avail,
+            earth_bias=bias,
             extra={k: v for k, v in spec.items() if k not in known},
         )
     if not cols:
