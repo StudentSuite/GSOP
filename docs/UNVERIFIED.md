@@ -23,3 +23,5 @@ Status values: `open` (nobody has checked), `in progress`, `confirmed` (move the
 | Units not fixed in the setup prompt: `insol_annual`, `dust_index` | `config/features.yaml` | Marked `TODO unit` | Anay | open |
 | Mars exponential pressure-law constants for `air_density` | `config/features.yaml` (`air_density`) | Not sourced; marked `TODO` | Shaurya / Vihaan | open |
 | `uv sync` on Windows 11 | `uv.lock`, issue A03 | Checked on macOS arm64 (Apple M2, standing in for the M1 by Yash's decision); not yet on Windows | Anay | open |
+| Earth Engine `getInfo()` probe of every dataset in `docs/PROVENANCE.md` | `scripts/ee_probe.py` | The catalog pages were read, but nobody has run the probe yet because no Earth Engine login exists on the machines used so far | Whoever authenticates Earth Engine (issue B01) | open |
+| DEM vertical datum difference (EGM96 vs EGM2008) at the 56S / 60N seam | `docs/PROVENANCE.md`; issue B07 | Reasoned from the catalog pages, never measured | Whoever runs B07 | open |

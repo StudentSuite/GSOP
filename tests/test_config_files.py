@@ -478,7 +478,11 @@ def test_provenance_table_columns_and_no_invented_ids():
     assert "## Software" in text
     dataset_rows = [ln for ln in text.split("## Software")[0].splitlines() if ln.startswith("| ") and "---" not in ln][1:]
     assert dataset_rows
-    assert all("NOT VERIFIED" in ln or "NOT CHOSEN" in ln for ln in dataset_rows)
+    for ln in dataset_rows:
+        cells = [c.strip() for c in ln.strip("|").split("|")]
+        unverified = "NOT VERIFIED" in ln or "NOT CHOSEN" in ln
+        checked = cells[-2] != "not checked" and cells[-1] != "not checked"
+        assert unverified or checked, f"row is neither marked unverified nor has a check date and checker: {cells[0]}"
 
 
 def test_readme_states_the_no_invention_rule():
