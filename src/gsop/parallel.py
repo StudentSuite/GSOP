@@ -165,3 +165,61 @@ def _readonly(array: np.ndarray) -> np.ndarray:
     view = array.view()
     view.flags.writeable = False
     return view
+
+
+_DONE = object()
+
+
+def iter_parallel(
+    func: Callable[[Any, Mapping[str, np.ndarray]], Any],
+    tasks: Iterable[Any],
+    shared: Optional[Mapping[str, np.ndarray]] = None,
+    workers: Optional[int] = None,
+    window: Optional[int] = None,
+):
+    """Like :func:`run_parallel` but a generator: yields results **in task order, one at a time**, with at most ``window`` tasks in flight.
+
+    Use it when each result is large (Monte Carlo blocks return per-tile arrays): the caller merges and discards each result as it arrives instead
+    of holding all of them. On ``KeyboardInterrupt`` or any exception the pool is shut down at once (pending tasks cancelled) and the shared
+    memory is released; whatever the caller already saved is kept.
+    """
+    from collections import deque
+
+    tasks = list(tasks)
+    shared = dict(shared or {})
+    workers = default_workers() if workers is None else int(workers)
+    if workers < 1:
+        raise ValueError("workers must be at least 1")
+    workers = min(workers, max(len(tasks), 1))
+    if workers == 1:
+        views = {k: _readonly(v) for k, v in shared.items()}
+        for t in tasks:
+            yield func(t, views)
+        return
+    window = window or workers + 1
+    segments: list[SharedArray] = []
+    pool = None
+    try:
+        specs = {}
+        for key, array in shared.items():
+            seg = SharedArray(array)
+            segments.append(seg)
+            specs[key] = seg.spec
+        pool = ProcessPoolExecutor(max_workers=workers, mp_context=_SPAWN, initializer=_init_worker, initargs=(specs,))
+        pending: "deque" = deque()
+        it = iter(tasks)
+        for t in it:
+            pending.append(pool.submit(_call, func, t))
+            if len(pending) >= window:
+                break
+        while pending:
+            result = pending.popleft().result()
+            nxt = next(it, _DONE)
+            if nxt is not _DONE:
+                pending.append(pool.submit(_call, func, nxt))
+            yield result
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=False, cancel_futures=True)
+        for seg in segments:
+            seg.close()

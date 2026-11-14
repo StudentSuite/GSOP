@@ -518,42 +518,165 @@ def compute_pass1_block(task, shared):
     return run_block(shared["x"], mcs, first, last, fractions, edges, chunk_rows)
 
 
-def simulate(x: np.ndarray, tile_ids: np.ndarray, mcs: MCSetup, params: MCParams, work_dir: Optional[Path] = None, chunk_rows: int = _S.DEFAULT_CHUNK_ROWS,
-             log=print) -> MCResult:
-    """The whole Monte Carlo for one target and profile (serial driver: pass 1, candidate selection, pass 2, results, convergence)."""
+def compute_pass2_block(task, shared):
+    """Worker entry point for pass 2: ``task = (mcs, cand_idx, first, last, store_dir, runs, n_candidates, chunk_rows)``; writes its rows into the memmap."""
+    mcs, cand_idx, first, last, store_dir, runs, n_cand, chunk_rows = task
+    pass2_block(shared["x"], mcs, cand_idx, first, last, Pass2Store(store_dir, runs, n_cand, create=False), chunk_rows)
+    return (first, last)
+
+
+def fingerprint(x: np.ndarray, mcs: MCSetup, params: MCParams) -> str:
+    """Identifies what a saved partial result belongs to: the settings, the set-up arrays and a sample of the features."""
+    import hashlib
+    import json
+
+    h = hashlib.sha256()
+    h.update(json.dumps({"runs": params.runs, "fractions": params.fractions, "checkpoints": params.checkpoints, "block_runs": params.block_runs,
+                         "seed": mcs.master_seed, "target": mcs.target, "profile": mcs.profile, "n": int(x.shape[0]), "k": int(x.shape[1])}, sort_keys=True).encode())
+    for a in (mcs.target_values, mcs.sigma, mcs.weight_lo, mcs.weight_hi, mcs.multipliers, mcs.target_unc, mcs.earth_bias_sd):
+        h.update(np.ascontiguousarray(a, dtype="float64").tobytes())
+    step = max(1, x.shape[0] // 1000)
+    h.update(np.ascontiguousarray(x[::step]).tobytes())
+    return h.hexdigest()
+
+
+def _save_block(path: Path, b: "Pass1Block") -> None:
+    import os
+    import tempfile
+
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".blk", suffix=".npz")
+    os.close(fd)
+    try:
+        np.savez(tmp, count=b.stats.count, mean=b.stats.mean, m2=b.stats.m2, minimum=b.stats.minimum, maximum=b.stats.maximum,
+                 segments=np.array(sorted(b.counters)), **{f"seg_{k}": c for k, c in b.counters.items()})
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _load_block(path: Path, first: int, last: int) -> "Pass1Block":
+    z = np.load(path)
+    st = OnlineStats(len(z["mean"]))
+    st.count, st.mean, st.m2, st.minimum, st.maximum = int(z["count"]), z["mean"], z["m2"], z["minimum"], z["maximum"]
+    return Pass1Block(first, last, st, {int(k): z[f"seg_{int(k)}"] for k in z["segments"]})
+
+
+def simulate(x: np.ndarray, tile_ids: np.ndarray, mcs: MCSetup, params: MCParams, work_dir: Optional[Path] = None, workers: int = 1,
+             chunk_rows: int = _S.DEFAULT_CHUNK_ROWS, log=print, keep_work: bool = False) -> MCResult:
+    """The whole Monte Carlo for one target and profile.
+
+    Pass 1 and pass 2 run as **blocks of runs** (``block_plan``). With ``work_dir`` every finished block is saved at once, so an interrupted run
+    (Ctrl-C, crash, closed laptop lid) resumes with only the missing blocks; saved partial results are used only if their fingerprint matches.
+    The result is the same for any ``workers``: blocks do not depend on it and are merged in run order.
+    """
+    from gsop.parallel import iter_parallel
+
     n = x.shape[0]
     cps = scaled_checkpoints(params.runs, params.checkpoints)
     edges = segment_starts(cps)
     plan = block_plan(params.runs, params.block_runs, cps)
+    persist = work_dir is not None
+    work = Path(work_dir) if persist else None
+    if persist:
+        work.mkdir(parents=True, exist_ok=True)
+        fp = fingerprint(x, mcs, params)
+        fp_file = work / "fingerprint.txt"
+        if fp_file.exists() and fp_file.read_text(encoding="utf-8").strip() != fp:
+            log(f"[mc] {mcs.target}/{mcs.profile}: saved partial results belong to different settings or data: discarding them")
+            for f in work.iterdir():
+                f.unlink()
+        fp_file.write_text(fp + "\n", encoding="utf-8")
+
+    def p1_path(a: int, b: int) -> Path:
+        return work / f"p1_{a}_{b}.npz"
+
     t0 = time.perf_counter()
-    blocks = [compute_pass1_block((mcs, a, b, params.fractions, edges, chunk_rows), {"x": x}) for a, b in plan]
+    blocks: "list[Pass1Block]" = []
+    todo = [(a, b) for a, b in plan if not (persist and p1_path(a, b).exists())]
+    done_before = len(plan) - len(todo)
+    if done_before:
+        log(f"[mc] {mcs.target}/{mcs.profile}: resuming, {done_before} of {len(plan)} pass 1 blocks already done")
+    for a, b in plan:
+        if persist and p1_path(a, b).exists():
+            blocks.append(_load_block(p1_path(a, b), a, b))
+    bar = _progress(len(todo), f"{mcs.target}/{mcs.profile} pass 1")
+    tasks = [(mcs, a, b, params.fractions, edges, chunk_rows) for a, b in todo]
+    for (a, b), blk in zip(todo, iter_parallel(compute_pass1_block, tasks, {"x": x}, workers)):
+        if persist:
+            _save_block(p1_path(a, b), blk)
+        blocks.append(blk)
+        bar.update(1)
+    bar.close()
     stats, seg = merge_pass1(blocks, n, len(cps), len(params.fractions))
+    blocks.clear()
     counts = sum(seg[1:], seg[0]) if len(seg) > 1 else seg[0]
     t1 = time.perf_counter()
+
     cand = select_candidates(stats.mean, counts[:, params.robust_index], params.candidate_fraction)
     import tempfile
 
-    with tempfile.TemporaryDirectory() if work_dir is None else _NullContext(work_dir) as d:
-        store = Pass2Store(Path(d), params.runs, len(cand))
-        for a, b in plan:
-            pass2_block(x, mcs, cand, a, b, store, chunk_rows)
+    tmp_ctx = None
+    if persist:
+        store_dir = work / "pass2"
+        cand_file = work / "candidates.npy"
+        if not (cand_file.exists() and np.array_equal(np.load(cand_file), cand)):
+            # first time, or the candidates changed: pass 2 files from another candidate list cannot be reused
+            if store_dir.exists():
+                for f in store_dir.iterdir():
+                    f.unlink()
+            np.save(cand_file, cand)
+    else:
+        tmp_ctx = tempfile.TemporaryDirectory()
+        store_dir = Path(tmp_ctx.name)
+    try:
+        store = Pass2Store(store_dir, params.runs, len(cand))
+        todo2 = [(a, b) for a, b in plan if not store.block_marker(a, b).exists()]
+        bar2 = _progress(len(todo2), f"{mcs.target}/{mcs.profile} pass 2")
+        tasks2 = [(mcs, cand, a, b, str(store_dir), params.runs, len(cand), chunk_rows) for a, b in todo2]
+        for _ in iter_parallel(compute_pass2_block, tasks2, {"x": x}, workers):
+            bar2.update(1)
+        bar2.close()
         summary = summarise_candidates(store)
+    finally:
+        if tmp_ctx is not None:
+            tmp_ctx.cleanup()
     t2 = time.perf_counter()
     table = build_results_table(tile_ids, stats, counts.astype(np.uint16), cand, summary, params)
     conv = convergence_report(seg, cps, params.fractions)
-    log(f"[mc] {mcs.target}/{mcs.profile}: {params.runs} runs on {n:,} tiles; pass 1 {t1 - t0:.1f} s, pass 2 {t2 - t1:.1f} s, {len(cand):,} candidates, "
-        f"{int(table.robust.sum()):,} robust")
-    return MCResult(table, conv, {"pass1_seconds": round(t1 - t0, 3), "pass2_seconds": round(t2 - t1, 3), "runs": params.runs, "tiles": n}, len(cand))
+    if persist and not keep_work:
+        import shutil
+
+        shutil.rmtree(work, ignore_errors=True)
+    log(f"[mc] {mcs.target}/{mcs.profile}: {params.runs} runs on {n:,} tiles, {workers} worker(s); pass 1 {t1 - t0:.1f} s, pass 2 {t2 - t1:.1f} s, "
+        f"{len(cand):,} candidates, {int(table.robust.sum()):,} robust")
+    return MCResult(table, conv, {"pass1_seconds": round(t1 - t0, 3), "pass2_seconds": round(t2 - t1, 3), "runs": params.runs, "tiles": n, "workers": workers,
+                                  "blocks": len(plan), "resumed_blocks": done_before}, len(cand))
 
 
-class _NullContext:
-    """``with`` wrapper around an existing directory (not deleted on exit)."""
+class _Bar:
+    def __init__(self, total: int, desc: str) -> None:
+        self._bar = None
+        if total > 0:
+            import sys
 
-    def __init__(self, path) -> None:
-        self.path = str(path)
+            from tqdm import tqdm
 
-    def __enter__(self) -> str:
-        return self.path
+            self._bar = tqdm(total=total, desc=desc, unit="block", disable=not sys.stderr.isatty(), leave=False)
 
-    def __exit__(self, *exc) -> None:
-        return None
+    def update(self, k: int = 1) -> None:
+        if self._bar is not None:
+            self._bar.update(k)
+
+    def close(self) -> None:
+        if self._bar is not None:
+            self._bar.close()
+
+
+def _progress(total: int, desc: str) -> _Bar:
+    return _Bar(total, desc)
+
+
