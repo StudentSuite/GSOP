@@ -461,3 +461,26 @@ def test_spec_headings_cover_pipeline_stages_s1_to_s9():
     for heading in ("Grid", "Features", "Operators", "Similarity", "Sigma rule", "Weights", "Purposes", "Gates",
                     "Monte Carlo", "ML", "Validation", "Discovery", "Ledger and fidelity", "Known weaknesses"):
         assert f"## {heading}" in text, heading
+
+
+# --- A20: UNVERIFIED.md and PROVENANCE.md ------------------------------------
+def test_unverified_has_the_seeded_rows():
+    text = (DOCS / "UNVERIFIED.md").read_text(encoding="utf-8")
+    assert "| Item | Where used | Why unverified | Who must confirm | Status |" in text
+    for needle in ("Known-site coordinates", "Arcadia Planitia centre", "relevance matrix", "Sigma floors",
+                   "Tolerances", "rough_a", "Earth dataset leads"):
+        assert needle in text, needle
+
+
+def test_provenance_table_columns_and_no_invented_ids():
+    text = (DOCS / "PROVENANCE.md").read_text(encoding="utf-8")
+    assert "| Dataset | Id / version | Date range | Resolution | Licence | How accessed | Checked on | Checked by |" in text
+    assert "## Software" in text
+    dataset_rows = [ln for ln in text.split("## Software")[0].splitlines() if ln.startswith("| ") and "---" not in ln][1:]
+    assert dataset_rows
+    assert all("NOT VERIFIED" in ln or "NOT CHOSEN" in ln for ln in dataset_rows)
+
+
+def test_readme_states_the_no_invention_rule():
+    readme = (DOCS.parent / "README.md").read_text(encoding="utf-8")
+    assert "an unverified item is allowed, an undocumented one is not" in readme

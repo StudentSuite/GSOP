@@ -1,0 +1,25 @@
+# Unverified items
+
+Ground rule 1: **never invent numbers, coordinates, dataset ids, URLs or paper values.** An unverified item is allowed; an undocumented one is not. Anything that has not been checked against a primary source goes in this table, with where it is used. A feature that cannot be built becomes `unavailable` (the missing-data gate handles it and logs the reason). Nothing is substituted silently.
+
+Status values: `open` (nobody has checked), `in progress`, `confirmed` (move the evidence to `docs/PROVENANCE.md` or the config and keep the row), `rejected`.
+
+| Item | Where used | Why unverified | Who must confirm | Status |
+|---|---|---|---|---|
+| Known-site coordinates (all 15: 6 primary, 4 secondary, 3 gate tests, 2 negative controls) | `config/known_sites.yaml`; validation (s7), discovery novelty list (s9) | Written from memory in the setup prompt; approximate. Manicouagan and Tatacoa are "as given in our files", Samoylov is approximate, Gosses Bluff is flagged uncertain in the plan file | Shaurya (issue D01), from a primary source, before any result is published | open |
+| Arcadia Planitia centre | `config/targets.yaml` (`lat`/`lon_e` are null, `status: unscored_no_target_data`) | Not in our files; must come from the SWIM ice map (decision D10). Never guessed | Anay / Shaurya, from swim.psi.edu | open |
+| Ledger relevance matrix (which limits matter for which purpose) | `config/ledger.yaml` `relevance`; fidelity (0-100) | Drafted by Claude; `provisional: true` | Anay and Vihaan | open |
+| Ledger rows: electrostatic dust, regolith mechanics | `config/ledger.yaml` rows 11 and 12 | Come from Shiven's report, not independently checked; no target value given in the setup prompt | Shiven, then Anay | open |
+| Ledger cold-trap row: Earth's 184 K record | `config/ledger.yaml` `cold_traps` | The 184 K is an air-temperature record; the satellite surface minimum is lower. Check before quoting | Anay | open |
+| Sigma floors (measurement uncertainty per column) | `config/features.yaml` `uncertainty`; sigma rule (s4); Monte Carlo data jitter (s5) | Only Moon slope (1.5-2.5 deg) and height (0.3-0.5 m) have a source (Barker 2021, 5 m per pixel polar DEMs); every other body/column is `TODO` and the IQR term carries the sigma. Using the **upper end** of a sourced range is an assumption made here | Anay (and the person who reads Barker 2021) | open |
+| Evidence grades (A/B/C) per feature column | `config/features.yaml` `evidence_grade` | First draft by Claude | Anay | open |
+| Tolerances: golden score 1e-4, top-1% Jaccard >= 0.99, operator check 10% | `config/run.yaml`; `gsop golden`, `gsop compare`, `gsop check-operators` | Taken from the setup prompt; never tested against real runs on both machines | Anay, after the first cross-machine golden run | open |
+| Other tunables: robust rule (top 5% in >= 90% of runs), candidate fraction 0.03, convergence checkpoints | `config/run.yaml` | Setup-prompt values; tunable, not sourced | Anay | open |
+| Gate thresholds: water/ice > 50%, NDVI > 0.2, built-up > 20% | `config/gates.yaml` | "Set by you" in the plan file; tunable, not sourced | Anay | open |
+| Mars target check: thermal-inertia unit for `>= 100` | `config/gates.yaml` `mars_target_check` | The unit is not stated in the setup prompt or the plan file | Shaurya / Vihaan | open |
+| `rough_a` and `rough_b` baselines (default about 100 m and 1 km) | `config/features.yaml`; operators | Defaults only. `TODO confirm with Vihaan` | Vihaan | open |
+| Earth dataset leads: NASADEM, Copernicus DEM GLO-30, MODIS land-surface temperature, MODIS NDVI, ASTER GED, EMIT, MERRA-2 dust / MODIS aerosol, permafrost probability map, GPM, SMAP, land-cover product, water/ice product | `config/features.yaml` (`lead: true`); `docs/PROVENANCE.md` | Leads, not facts. Collection ids, versions and licences must be checked in the live catalog before use | Whoever runs the Earth Engine export (issue phase B) | open |
+| Moon/Mars source details: Mars climate data set for `t_mean`/`t_coldest`, Diviner coverage near the pole, TES/THEMIS products, SWIM product | `config/features.yaml`; target profiles (s2) | Dataset not chosen or not opened yet | Anay / Shaurya | open |
+| Units not fixed in the setup prompt: `insol_annual`, `dust_index` | `config/features.yaml` | Marked `TODO unit` | Anay | open |
+| Mars exponential pressure-law constants for `air_density` | `config/features.yaml` (`air_density`) | Not sourced; marked `TODO` | Shaurya / Vihaan | open |
+| `uv sync` on Windows 11 and on the Apple M1 Mac | `uv.lock`, issue A03 | Only checked on macOS arm64 so far | Anay (Windows), Shaurya (M1) | open |
