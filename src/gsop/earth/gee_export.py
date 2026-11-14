@@ -332,3 +332,24 @@ def water_index_bands(ee: Any, cfg: Config) -> Any:
     wi = perm.add(dry).divide(2).rename("water_index")
     cells = int(round(ops.tile_m / 1000.0)) ** 2 + 64
     return wi.addBands(dry).reduceResolution(reducer=ee.Reducer.mean(), maxPixels=cells)
+
+
+MERRA2_AER_ID = "NASA/GSFC/MERRA/aer/2"
+
+
+def dust_bands(ee: Any, cfg: Config) -> Any:
+    """Band ``dust_index_raw``: annual-mean MERRA-2 dust extinction AOT (550 nm, unitless) at 6 km.
+
+    Only the 12:00 UTC hourly value of each day is used (one image per day instead of 24) to keep the reduction
+    small; dust optical thickness changes slowly within a day. MERRA-2 cells are 69375 x 55000 m, so every 6 km
+    tile inside a cell gets the cell's value (nearest neighbour): coarse by design, see ``gsop.dust``. Scaling
+    to 0..1 happens at build time (B18) with data percentiles.
+    """
+    t = cfg.features.temperature
+    col = (
+        ee.ImageCollection(MERRA2_AER_ID)
+        .filterDate(f"{t.start_year}-01-01", f"{t.end_year + 1}-01-01")
+        .filter(ee.Filter.calendarRange(12, 12, "hour"))
+        .select("DUEXTTAU")
+    )
+    return col.mean().rename("dust_index_raw")

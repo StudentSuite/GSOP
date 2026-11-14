@@ -30,6 +30,12 @@ TODO (phase B). Fixed by decision D1: 6 km x 6 km tiles on the equal-area grid E
 
 Columns, sources and uncertainty floors are in `config/features.yaml`. `water_index` and `silica_index` are cross-instrument proxies and are the two weakest comparisons in the index. Other feature definitions are added below by the issue that builds each one.
 
+### Earth `dust_index` (issue B12)
+
+Mars thermal-inertia family column (it shares the family's weight with `ti_proxy`). **Status: built with a caveat, not unavailable.** Earth Engine exports `dust_index_raw`, the annual-mean MERRA-2 dust extinction aerosol optical thickness at 550 nm (`NASA/GSFC/MERRA/aer/2`, band `DUEXTTAU`, noon-UTC value of each day, 2015-2024). At build time (issue B18) it is scaled to 0..1 as `clip((raw - lo) / (hi - lo), 0, 1)` with `lo`, `hi` the 1st and 99th percentile over land tiles, so no cap is invented (`src/gsop/dust.py`); higher = more dust. Caveats: MERRA-2 cells are 69375 x 55000 m, about ten times coarser than a tile, so neighbouring tiles share a value; and it measures atmospheric dust while the Mars column (TES) is surface albedo and dust cover, so the two are not the same quantity.
+
+If the column is ever marked `unavailable`, the Mars `thermal_inertia` family uses `ti_proxy` **alone**: a family's score is the mean of its columns' similarities, so dropping a column renormalises inside the family and the family keeps its weight (`Config.family_columns(body, family, unavailable)`); a family with no usable column left is an error and the missing-data gate acts.
+
 ### Earth `water_index` (issue B11)
 
 `water_index` is the Moon's `cold_dry` family and the Mars `water` family. On Earth it is a **cross-instrument proxy and one of the two weakest comparisons in GSOP**: `water_index = mean(permafrost probability, dryness)`, both 0 to 1 and higher = more ice-like. Dryness is `1 - clip(AI / ai_cap, 0, 1)` with `AI = P / PET` from TerraClimate annual sums (UNEP aridity index): **0 = fully humid** (AI at or above `ai_cap`, default 1), **1 = no precipitation**. Reference code: `src/gsop/water_index.py`. A tile missing either input gets NaN (never 0). Hot deserts get about 0.5 (dry, no permafrost); cold deserts with permafrost approach 1; tropical wet ground gets 0.

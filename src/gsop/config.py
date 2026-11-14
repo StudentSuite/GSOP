@@ -884,6 +884,22 @@ class Config:
     def targets(self, body: str) -> dict[str, Target]:
         return dict(self._targets[self._body(body)])
 
+    def family_columns(self, body: str, family: str, unavailable: Iterable[str] = ()) -> tuple[str, ...]:
+        """Columns of ``family`` that are usable, dropping any in ``unavailable``.
+
+        A family's score is the mean of its columns' similarities, so dropping a column renormalises inside
+        the family (the family keeps its weight and uses the remaining columns alone). A family with no usable
+        column left is an error: the caller must treat the family as missing (and the missing-data gate acts).
+        """
+        fam = self._families[self._body(body)].get(family)
+        if fam is None:
+            raise ConfigError(f"unknown family '{family}' for {body}")
+        gone = set(unavailable)
+        cols = tuple(c for c in fam.columns if c not in gone)
+        if not cols:
+            raise ConfigError(f"{body}.{family}: every column is unavailable ({', '.join(fam.columns)})")
+        return cols
+
     # -- hashing ------------------------------------------------------------
     def config_hash(self, parts: Optional[Iterable[str]] = None) -> str:
         """sha256 over canonical JSON of the parsed config.
