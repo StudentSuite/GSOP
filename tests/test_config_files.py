@@ -438,3 +438,26 @@ def test_real_config_loads_without_warnings_and_hash_is_stable():
     assert cfg.config_hash() == C.load_config(CONFIG_DIR).config_hash()
     assert len(cfg.weights("moon")) == 8 and len(cfg.weights("mars")) == 9
     assert cfg.known_sites.unconfirmed_count == 15
+
+
+# --- A19: docs ---------------------------------------------------------------
+DOCS = Path(__file__).resolve().parents[1] / "docs"
+
+
+def test_decisions_has_d1_to_d10_and_is_linked_from_readme():
+    text = (DOCS / "DECISIONS.md").read_text(encoding="utf-8")
+    for i in range(1, 11):
+        assert f"**D{i}.**" in text
+    assert "Anay" in text and "2026-11-14" in text
+    readme = (DOCS.parent / "README.md").read_text(encoding="utf-8")
+    assert "docs/SPEC.md" in readme and "docs/DECISIONS.md" in readme
+    assert "updates `docs/SPEC.md` in the same pull request" in readme
+
+
+def test_spec_headings_cover_pipeline_stages_s1_to_s9():
+    text = (DOCS / "SPEC.md").read_text(encoding="utf-8")
+    for stage in ("s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9"):
+        assert f"({stage})" in text
+    for heading in ("Grid", "Features", "Operators", "Similarity", "Sigma rule", "Weights", "Purposes", "Gates",
+                    "Monte Carlo", "ML", "Validation", "Discovery", "Ledger and fidelity", "Known weaknesses"):
+        assert f"## {heading}" in text, heading
