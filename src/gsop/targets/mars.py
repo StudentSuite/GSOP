@@ -189,3 +189,66 @@ def mars_thermal_rows(cfg: Config, themis_source=themis_url, cache_dir: Optional
             rows.append({"target": name, "column": col, "value": float("nan"), "spread": float("nan"), "source": "TES / THEMIS (not built)",
                          "evidence_grade": "C", "window": window, "unavailable": True, "note": why})
     return rows
+
+
+# ===========================================================================================================
+# Mars water_index from SWIM (issue B30, decisions D7 and D10)
+# ===========================================================================================================
+SWIM_CI_URL = "https://swim.psi.edu/output/NorthernHemisphere/Northern/Composite/Northern_Ci.tif"
+SWIM_ARCADIA_FOOTPRINT_URL = "https://swim.psi.edu/output/PilotStudy/Arcadia/Composite/Ci.tif"
+SWIM_CELL_M = 3000.0
+
+
+def consistency_to_water_index(c) -> np.ndarray:
+    """SWIM combined ice consistency C in [-1, +1] (+1 consistent with ice, -1 inconsistent) -> water_index in [0, 1]: (C + 1) / 2."""
+    return np.clip((np.asarray(c, dtype="float64") + 1.0) / 2.0, 0.0, 1.0)
+
+
+def swim_water_index_rows(cfg: Config, source: str = SWIM_CI_URL, cache_dir: Optional[Path] = None) -> list[dict]:
+    """Mars ``water_index`` = ONE composite, the SWIM combined ice consistency rescaled to 0..1 (decision D7).
+
+    The SWIM combined map is itself the "SWIM equation" combination of the neutron (water-equivalent hydrogen, including its depth
+    to a lower layer), thermal (TES and THEMIS thermal inertia), radar surface power, geomorphology and radar dielectric maps. Ice
+    depth, ice consistency and thermal inertia are therefore **already inside this one number and are not added again**: counting
+    them separately is exactly what D7 forbids. Value = median over the window's 6 km tiles of ``(C + 1) / 2``, spread = IQR / 1.349.
+    The product has a 3 km pixel, so a 6 km tile holds only 2 x 2 pixels.
+    """
+    from gsop.targets.moon import _summarise
+
+    ts = cfg.target_settings
+    tile = cfg.features.operators.tile_m
+    rows: list[dict] = []
+    for name, target in cfg.targets("mars").items():
+        if target.lat is None:
+            continue
+        info = read_window(source, target.lat, target.lon_e, ts.target_window_km, cache_dir, cell_m=SWIM_CELL_M)
+        wi = consistency_to_water_index(info["dem"])
+        vals = _tile_values(wi, SWIM_CELL_M, tile, ts.tile_stride_km * 1000.0)
+        p = _summarise(vals, ts.spread_iqr_divisor)
+        rows.append({
+            "target": name, "column": "water_index", "value": p["value"], "spread": p["spread"],
+            "source": "SWIM 1.0 combined ice consistency, northern hemisphere (Morgan et al. 2021; swim.psi.edu Northern_Ci.tif), rescaled (C + 1) / 2",
+            "evidence_grade": "B",
+            "window": f"{ts.target_window_km:g} km window, {ts.tile_stride_km:g} km stride, {tile / 1000:g} km tiles; SWIM pixel 3 km ({info['shape'][1]}x{info['shape'][0]} sampled px)",
+            "unavailable": not np.isfinite(p["value"]),
+            "note": "ONE composite (D7): ice depth, consistency and thermal inertia are all inside the SWIM combined consistency and not counted again; cross-instrument proxy",
+        })
+    return rows
+
+
+def swim_arcadia_footprint(source: str = SWIM_ARCADIA_FOOTPRINT_URL) -> dict:
+    """Footprint of the SWIM pilot-study raster for Arcadia, as INFORMATION ONLY (it is never written to targets.yaml).
+
+    It is the extent of a study swath (about 20 degrees of longitude by 60 degrees of latitude), not the position of a site, and the
+    SWIM maps contain no site centre; the midpoint would be an arbitrary number presented as data, which decision D10 forbids.
+    """
+    with rasterio.Env(GDAL_HTTP_TIMEOUT="120", GDAL_HTTP_MAX_RETRY="3", GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR"):
+        with rasterio.open(_open_path(source)) as ds:
+            b = ds.bounds
+            r = MARS_RADIUS_M
+            return {
+                "lon_west": math.degrees(b.left / r), "lon_east": math.degrees(b.right / r),
+                "lat_south": math.degrees(b.bottom / r), "lat_north": math.degrees(b.top / r),
+                "pixel_m": float(ds.res[0]), "source": source,
+                "is_a_site_centre": False,
+            }
