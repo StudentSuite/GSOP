@@ -217,6 +217,8 @@ TODO (phase C). Multiply base weights by the purpose multipliers, then renormali
 
 **Streaming core (issue C17).** Scoring a run for all tiles is `gsop.similarity.score_tiles` in chunks, so peak extra memory is one chunk, not the tile block. Per-tile statistics over runs are kept online (`OnlineStats`: count, mean, M2 for the variance, min, max; Welford update, Chan merge in a fixed order) instead of storing an N x 2000 matrix. `GSOP_MC_DEBUG=1` turns on an assertion that refuses any buffer that looks like (tiles x runs) and prints its size. The score of a run depends only on the run index (tested), so blocks of runs can be computed anywhere and merged.
 
+**Top-set membership (issue C18).** For every run the top 1%, 5% and 10% of the gated tiles (`ceil(fraction * N)` tiles each, nested) get +1 in a uint16 counter per tile (2,000 runs cannot overflow it; the limit is 65,535). The cut is found in O(N) with `np.partition`, and only the top 10% is then sorted. **Tie rule:** tiles are ordered by score descending and, among equal scores, by lower index (tile order is `tile_id` ascending), so the sets never depend on the algorithm's internal order. NaN scores are refused (a NaN would sort as the largest); missing tiles must be gated out first. Counters are kept per **segment** between convergence checkpoints so that cumulative counts at 500, 1,000, 1,500 and 2,000 runs are exact.
+
 The range, not the derived weight, is what is sampled: the Moon `thermal_inertia` range is 0.02 to 0.04 although its derived weight is 0.019.
 
 ## ML (s6)

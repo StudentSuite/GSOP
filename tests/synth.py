@@ -108,14 +108,19 @@ def used_columns(body: str, cfg: Optional[Config] = None) -> list:
     return list(seen)
 
 
-def target_profile(body: str, cfg: Optional[Config] = None) -> pd.DataFrame:
-    """Synthetic target profile (value + spread per used column) for ``body``."""
+def target_profile(body: str, cfg: Optional[Config] = None, away: Optional[float] = None) -> pd.DataFrame:
+    """Synthetic target profile (value + spread per used column) for ``body``.
+
+    ``away`` is how many background standard deviations the target sits from the background mean (default ``TARGET_SD_AWAY[body]``: far, so a tile
+    that matches a family clearly beats every background tile). Small values (0 to 1) put the target inside the bulk of the background, so partial
+    matches compete, which is what the Monte Carlo robustness tests need.
+    """
     if body not in BODIES:
         raise ValueError(f"body must be one of {BODIES}")
     rows = []
     for col in used_columns(body, cfg):
         mu, sd, lo, hi = BACKGROUND[col]
-        k = TARGET_SD_AWAY[body]
+        k = TARGET_SD_AWAY[body] if away is None else float(away)
         direction = 1.0 if mu + 4.0 * sd <= hi else -1.0
         if body == "mars" and lo <= mu - direction * k * sd <= hi:
             direction = -direction
@@ -149,7 +154,7 @@ def planted_ids(body: str, cfg: Optional[Config] = None) -> dict:
     }
 
 
-def make_grid(n: int = DEFAULT_N, seed: int = 0, body: str = "moon", cfg: Optional[Config] = None) -> SynthGrid:
+def make_grid(n: int = DEFAULT_N, seed: int = 0, body: str = "moon", cfg: Optional[Config] = None, away: Optional[float] = None) -> SynthGrid:
     cfg = _cfg(cfg)
     if body not in BODIES:
         raise ValueError(f"body must be one of {BODIES}")
@@ -159,7 +164,7 @@ def make_grid(n: int = DEFAULT_N, seed: int = 0, body: str = "moon", cfg: Option
     rng = np.random.default_rng(seed)
     columns = list(BACKGROUND)
     used = used_columns(body, cfg)
-    target = target_profile(body, cfg)
+    target = target_profile(body, cfg, away)
     tvalue = dict(zip(target["column"], target["value"]))
     tspread = dict(zip(target["column"], target["spread"]))
     gates = cfg.gates.thresholds

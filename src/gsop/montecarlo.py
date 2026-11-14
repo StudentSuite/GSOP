@@ -231,3 +231,74 @@ def run_stats(x: np.ndarray, mcs: MCSetup, first_run: int, last_run: int, chunk_
     for i in range(first_run, last_run):
         stats.update(score_run(x, mcs, i, chunk_rows, guard))
     return stats
+
+
+# ===========================================================================================================
+# Per-run top 1%, 5%, 10% membership (issue C18)
+# ===========================================================================================================
+MAX_RUNS_UINT16 = np.iinfo(np.uint16).max
+
+
+def top_k_sizes(n_tiles: int, fractions) -> list[int]:
+    """Number of tiles in each top set: ``ceil(fraction * n)``, at least 1."""
+    return [max(1, int(np.ceil(f * n_tiles))) for f in fractions]
+
+
+def top_sets(score: np.ndarray, fractions) -> list[np.ndarray]:
+    """Indices of the top ``fraction`` of tiles for each fraction (nested: the 1% set is inside the 5% set, inside the 10% set), in ranked order.
+
+    Tie rule (deterministic, independent of the algorithm's internals): tiles are ordered by score descending, and among equal scores the **lower
+    index wins**, and tile order is ``tile_id`` ascending. Uses ``np.partition`` to find the cut value in O(N), then sorts only the top 10%.
+    """
+    n = len(score)
+    if np.isnan(score).any():
+        raise ValueError("NaN scores cannot be ranked (np.partition would put them first); gate missing tiles out before the Monte Carlo")
+    sizes = top_k_sizes(n, fractions)
+    kmax = max(sizes)
+    if kmax >= n:
+        cand = np.arange(n)
+    else:
+        thr = np.partition(score, n - kmax)[n - kmax]  # the kmax-th largest value
+        strict = np.flatnonzero(score > thr)
+        ties = np.flatnonzero(score == thr)[: kmax - len(strict)]  # lowest indices first
+        cand = np.sort(np.concatenate([strict, ties]))
+    ranked = cand[np.lexsort((cand, -score[cand]))]  # primary: score descending, then index ascending
+    return [ranked[:k] for k in sizes]
+
+
+def add_membership(counters: np.ndarray, score: np.ndarray, fractions) -> None:
+    """Increment the uint16 ``counters`` (n_tiles, n_fractions) for the tiles in each of this run's top sets."""
+    for j, idx in enumerate(top_sets(score, fractions)):
+        counters[idx, j] += 1
+
+
+@dataclass
+class Pass1Block:
+    """Result of a block of consecutive runs: statistics and, per segment between checkpoints, top-set counters."""
+
+    first_run: int
+    last_run: int
+    stats: OnlineStats
+    counters: dict  # segment index -> uint16 (n_tiles, n_fractions)
+
+
+def run_block(x: np.ndarray, mcs: MCSetup, first_run: int, last_run: int, fractions, segment_edges=(), chunk_rows: int = _S.DEFAULT_CHUNK_ROWS,
+              debug: Optional[bool] = None) -> Pass1Block:
+    """Runs ``first_run`` to ``last_run - 1``: online statistics plus membership counters. ``segment_edges`` are the ascending run indices that START a
+    new segment (the convergence checkpoints 500, 1000, 1500: runs 0-499 are segment 0, 500-999 segment 1, ...); a run goes to the counters of the
+    segment it falls in, so cumulative counts at any checkpoint are exact."""
+    n = x.shape[0]
+    if last_run - first_run > MAX_RUNS_UINT16:
+        raise ValueError("more runs than a uint16 counter can hold")
+    guard = AllocGuard(n, last_run - first_run, debug)
+    stats = OnlineStats(n)
+    edges = list(segment_edges)
+    counters: dict[int, np.ndarray] = {}
+    for i in range(first_run, last_run):
+        seg = int(np.searchsorted(edges, i, side="right")) if edges else 0
+        if seg not in counters:
+            counters[seg] = np.zeros((n, len(fractions)), dtype=np.uint16)
+        score = score_run(x, mcs, i, chunk_rows, guard)
+        stats.update(score)
+        add_membership(counters[seg], score, fractions)
+    return Pass1Block(first_run, last_run, stats, counters)
