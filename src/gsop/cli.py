@@ -197,9 +197,22 @@ app.add_typer(s3, name="s3")
 
 
 @s3.command("gates")
-def s3_gates(body: Body = BodyOpt, target_check: Optional[str] = TargetCheckOpt) -> None:
-    """Passed and rejected tables with reasons."""
-    _stub("s3 gates")
+def s3_gates(body: Body = BodyOpt, target_check: Optional[str] = TargetCheckOpt,
+             force: bool = typer.Option(False, "--force", help="Rerun even if nothing changed.")) -> None:
+    """Passed and rejected tables with reasons (skipped by the runner when inputs and config are unchanged)."""
+    from gsop.config import load_config
+    from gsop.paths import Paths
+    from gsop.runner import Runner, RunnerError
+    from gsop.similarity import SetupError
+    from gsop.stages import s3
+
+    cfg, paths = load_config(), Paths()
+    try:
+        stage = s3.stage(cfg, body.value, paths, target_check, log=typer.echo)
+        Runner(paths.results(body.value), cfg, body=body.value, base_dir=paths.root, log=typer.echo).run([stage], force=["s3"] if force else ())
+    except (SetupError, RunnerError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
 
 
 s4 = typer.Typer(help="s4: base similarity score.", no_args_is_help=True)
