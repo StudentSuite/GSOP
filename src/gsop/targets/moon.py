@@ -76,7 +76,9 @@ def read_window(source: str, lat: float, lon_east: float, window_km: float, cach
             # centred on the target where possible; shifted (not shrunk) to stay inside the file, so the window keeps its size
             col0 = min(max(int(round((left - ds.bounds.left) / ds.res[0])), 0), ds.width - n_w)
             row0 = min(max(int(round((ds.bounds.top - top) / ds.res[1])), 0), ds.height - n_h)
-            dem = ds.read(1, window=Window(col0, row0, n_w, n_h), masked=True).astype("float64").filled(np.nan)
+            dem = ds.read(1, window=Window(col0, row0, n_w, n_h), masked=True).astype("float64")
+            scale, offset = (ds.scales[0] or 1.0), (ds.offsets[0] or 0.0)  # PDS maps store scaled integers; the DEM has scale 1
+            dem = (dem * scale + offset).filled(np.nan)
             info = {
                 "cell_m": float(ds.res[0]), "x0": ds.bounds.left + col0 * ds.res[0], "y_top": ds.bounds.top - row0 * ds.res[1],
                 "crs": ds.crs.to_wkt(), "bounds": list(ds.bounds), "source": source, "target_xy": [x, y],
@@ -136,4 +138,97 @@ def moon_terrain_rows(cfg: Config, source_for=lola_url, cache_dir: Optional[Path
                 "unavailable": not np.isfinite(p["value"]),
                 "note": f"{p['n_valid']} of {p['n_tiles']} tiles valid; effective baseline {prof['effective_baseline_m']}",
             })
+    return rows
+
+
+# ===========================================================================================================
+# Illumination targets and PSR water_index (issue B27)
+# ===========================================================================================================
+LPSR_URL = "https://pgda.gsfc.nasa.gov/data/MoonIllumination/LPSR_85S_060M_201608.TIF"
+PSR_SHADOW_THRESHOLD = 0.5  # scaled LPSR values are exactly 0.0 or 1.0; 1.0 = permanent shadow (verified, see SPEC)
+GLASER_KEYS = ("lit_surface_pct", "lit_2m_pct", "max_shadow_h_surface", "max_shadow_h_2m", "nearest_psr_m")
+
+
+def polar_xy_to_lat(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Latitude (degrees, south negative) of south polar stereographic points (sphere radius 1,737,400 m)."""
+    rho = np.hypot(x, y)
+    return -90.0 + np.degrees(2.0 * np.arctan(rho / (2.0 * 1_737_400.0)))
+
+
+def _summarise(values: np.ndarray, divisor: float) -> dict:
+    v = np.asarray(values, dtype="float64")
+    v = v[np.isfinite(v)]
+    if not v.size:
+        return {"value": float("nan"), "spread": float("nan"), "n_tiles": 0}
+    q1, med, q3 = np.percentile(v, [25, 50, 75])
+    return {"value": float(med), "spread": float((q3 - q1) / divisor), "n_tiles": int(v.size)}
+
+
+def moon_illumination_rows(cfg: Config) -> list[dict]:
+    """``sun_max_elev`` and ``sun_low_share`` at the two Moon targets (rule in docs/SPEC.md, issue B27).
+
+    RULE. The two columns describe the Sun's geometry in the sky (highest elevation over the year, share of daylight below 5
+    degrees), so they are computed by the shared analytic module ``gsop.illumination`` with the Moon obliquity, at the centres
+    of the window's 6 km tiles (median, IQR / 1.349). Glaser et al. (2018) numbers (``lit_surface_pct``, ``lit_2m_pct``, shadow
+    hours, nearest PSR distance, from ``targets.yaml``) measure how much of the time terrain leaves the site lit. They are a
+    different quantity from both columns, so they are **not converted** into either; they are carried in each row's note as the
+    evidence a reader can compare with. Receiver height 2 m applies to Glaser's ``*_2m`` values only.
+    """
+    from gsop.illumination import compute_illumination
+    from gsop.targets.diviner import polar_xy_m, tile_edges
+
+    ts = cfg.target_settings
+    body = cfg.features.illumination.bodies["moon"]
+    rows = []
+    for name, t in cfg.targets("moon").items():
+        if t.lat is None:
+            continue
+        cx, cy = polar_xy_m(t.lat, t.lon_e)
+        tile = cfg.features.operators.tile_m
+        corners = tile_edges(cx, cy, ts.target_window_km * 1000, tile, ts.tile_stride_km * 1000)
+        centres = np.array([(x0 + tile / 2, y0 + tile / 2) for x0, y0 in corners])
+        lat = polar_xy_to_lat(centres[:, 0], centres[:, 1])
+        ill = compute_illumination(lat, body, cfg.features.illumination)
+        glaser = ", ".join(f"{k}={t.attributes[k]}" for k in GLASER_KEYS if k in t.attributes)
+        for col in ("sun_max_elev", "sun_low_share"):
+            p = _summarise(ill[col], ts.spread_iqr_divisor)
+            rows.append({
+                "target": name, "column": col, "value": p["value"], "spread": p["spread"],
+                "source": "computed: gsop.illumination (analytic, flat horizon) with the Moon obliquity from features.yaml",
+                "evidence_grade": "B",
+                "window": f"{ts.target_window_km:g} km window, {ts.tile_stride_km:g} km stride, {tile / 1000:g} km tiles (centre latitudes)",
+                "unavailable": not np.isfinite(p["value"]),
+                "note": f"geometry only, no terrain shadowing. Glaser 2018 (not converted, receiver height {ts.receiver_height_m:g} m for *_2m): {glaser}",
+            })
+    return rows
+
+
+def psr_share_rows(cfg: Config, source: str = LPSR_URL, cache_dir: Optional[Path] = None) -> list[dict]:
+    """``water_index`` (Moon) = share of the tile in permanent shadow, from the LOLA PSR map (Mazarico et al. 2011, 2016 release)."""
+    from gsop.targets.diviner import polar_xy_m, tile_edges
+
+    ts = cfg.target_settings
+    tile = cfg.features.operators.tile_m
+    rows = []
+    for name, t in cfg.targets("moon").items():
+        if t.lat is None:
+            continue
+        info = read_window(source, t.lat, t.lon_e, ts.target_window_km, cache_dir)
+        psr = info["dem"]  # scaled values: 0.0 sunlit at some time, 1.0 permanently shadowed
+        cell = info["cell_m"]
+        shadow = np.where(np.isfinite(psr), (psr > PSR_SHADOW_THRESHOLD).astype("float64"), np.nan)
+        shares = []
+        for x0, y0 in tile_edges(*info["target_xy"], ts.target_window_km * 1000, tile, ts.tile_stride_km * 1000):
+            c0, r0 = int(round((x0 - info["x0"]) / cell)), int(round((info["y_top"] - (y0 + tile)) / cell))
+            n = int(round(tile / cell))
+            block = shadow[max(r0, 0): r0 + n, max(c0, 0): c0 + n]
+            shares.append(float(np.nanmean(block)) if block.size and np.isfinite(block).any() else np.nan)
+        p = _summarise(np.array(shares), ts.spread_iqr_divisor)
+        rows.append({
+            "target": name, "column": "water_index", "value": p["value"], "spread": p["spread"],
+            "source": "LOLA permanent shadow map LPSR_85S_060M_201608 (Mazarico et al. 2011; NASA PGDA)", "evidence_grade": "B",
+            "window": f"{ts.target_window_km:g} km window, {ts.tile_stride_km:g} km stride, {tile / 1000:g} km tiles; {psr.shape[1]}x{psr.shape[0]} px of {cell:g} m",
+            "unavailable": not np.isfinite(p["value"]),
+            "note": f"share of tile in permanent shadow (modelled from LOLA topography over an 18.6-year cycle); Glaser nearest_psr_m={t.attributes.get('nearest_psr_m')} not used because the map is reachable",
+        })
     return rows
