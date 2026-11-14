@@ -48,21 +48,23 @@ def _open_path(source: str) -> str:
     return f"/vsicurl/{source}" if str(source).startswith("http") else str(source)
 
 
-def read_window(source: str, lat: float, lon_east: float, window_km: float, cache_dir: Optional[Path] = None) -> dict:
-    """15 km (``window_km``) DEM window centred on the target on a local 500 m equal-area grid. Windowed read only."""
-    key = hashlib.sha256(f"{source}|{lat}|{lon_east}|{window_km}|{TARGET_CELL_M}".encode()).hexdigest()[:16]
+def read_window(source: str, lat: float, lon_east: float, window_km: float, cache_dir: Optional[Path] = None,
+                cell_m: float = TARGET_CELL_M) -> dict:
+    """``window_km`` square window centred on the target, resampled to a local equal-area grid of ``cell_m`` metres (default 500 m, the
+    terrain baseline; THEMIS uses its native 100 m). Windowed read only."""
+    key = hashlib.sha256(f"{source}|{lat}|{lon_east}|{window_km}|{cell_m}".encode()).hexdigest()[:16]
     if cache_dir is not None:
         npy, meta = Path(cache_dir) / f"mola_{key}.npy", Path(cache_dir) / f"mola_{key}.json"
         if npy.is_file() and meta.is_file():
             info = json.loads(meta.read_text(encoding="utf-8"))
             info["dem"] = np.load(npy)
             return info
-    n = int(round(window_km * 1000.0 / TARGET_CELL_M))
+    n = int(round(window_km * 1000.0 / cell_m))
     dst_crs = local_crs(lat, lon_east)
     # centres of the destination cells in the local equal-area grid (row 0 at the north)
     half = window_km * 500.0
-    cx = -half + (np.arange(n) + 0.5) * TARGET_CELL_M
-    cy = half - (np.arange(n) + 0.5) * TARGET_CELL_M
+    cx = -half + (np.arange(n) + 0.5) * cell_m
+    cy = half - (np.arange(n) + 0.5) * cell_m
     gx, gy = np.meshgrid(cx, cy)
     with rasterio.Env(GDAL_HTTP_TIMEOUT="120", GDAL_HTTP_MAX_RETRY="3", CPL_VSIL_CURL_CHUNK_SIZE="4194304", GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR"):
         with rasterio.open(_open_path(source)) as ds:
@@ -84,7 +86,7 @@ def read_window(source: str, lat: float, lon_east: float, window_km: float, cach
     # bilinear interpolation of the source at the 500 m cell centres; any NaN neighbour makes the result NaN
     dem = map_coordinates(src, [rows, cols], order=1, mode="constant", cval=np.nan, prefilter=False).astype("float32")
     info = {
-        "cell_m": TARGET_CELL_M, "native_cell_m": native, "x0": -window_km * 500.0, "y_top": window_km * 500.0,
+        "cell_m": cell_m, "native_cell_m": native, "x0": -window_km * 500.0, "y_top": window_km * 500.0,
         "crs": dst_crs.to_wkt(), "source": source, "shape": [n, n],
         "sha256": hashlib.sha256(np.ascontiguousarray(dem).tobytes()).hexdigest(),
     }
@@ -120,4 +122,70 @@ def mars_terrain_rows(cfg: Config, source: str = MOLA_URL, cache_dir: Optional[P
                          + ("; rough_a baseline is 500 m, not 100 m (MOLA cannot resolve it)" if col == "rough_a" else "")
                          + f"; window sha256 {info['sha256'][:16]}"),
             })
+    return rows
+
+
+# ===========================================================================================================
+# THEMIS thermal inertia, TES, and what cannot be built (issue B29)
+# ===========================================================================================================
+THEMIS_BASE = ("https://asc-astropedia.s3.us-west-2.amazonaws.com/Mars/Odyssey/THEMIS-Global-Thermal-Inertia-Mosaic/Quantitative-32-Bit/"
+               "THEMIS_TI_Mosaic_Quant_{band}_100mpp.cub")
+THEMIS_CELL_M = 100.0
+TI_COLUMN = "thermal_inertia_themis"  # raw THEMIS thermal inertia in J m-2 K-1 s-1/2; NOT a scored column (see SPEC)
+
+
+def themis_tile_name(lat: float, lon_east: float) -> str:
+    """Name of the 60 x 30 degree THEMIS quantitative mosaic tile, for example ``00N060E`` (0-30 N, 60-120 E).
+
+    Only the northern naming pattern (``00N``, ``30N``) was seen on the catalog pages; other latitude bands raise.
+    """
+    if not 0.0 <= lat < 60.0:
+        raise ValueError("only the tiles at 0-30 N and 30-60 N were verified; extend after checking the catalog names")
+    return f"{int(lat // 30) * 30:02d}N{int((lon_east % 360.0) // 60) * 60:03d}E"
+
+
+def themis_url(lat: float, lon_east: float) -> str:
+    return THEMIS_BASE.format(band=themis_tile_name(lat, lon_east))
+
+
+def _tile_values(grid: np.ndarray, cell_m: float, tile_m: float, stride_m: float) -> np.ndarray:
+    n, step = int(round(tile_m / cell_m)), int(round(stride_m / cell_m))
+    meds = []
+    for r in range(0, grid.shape[0] - n + 1, step):
+        for c in range(0, grid.shape[1] - n + 1, step):
+            block = grid[r : r + n, c : c + n]
+            meds.append(float(np.nanmedian(block)) if np.isfinite(block).mean() >= 0.8 else np.nan)
+    return np.array(meds)
+
+
+def mars_thermal_rows(cfg: Config, themis_source=themis_url, cache_dir: Optional[Path] = None) -> list[dict]:
+    """THEMIS thermal inertia at Jezero, and explicit ``unavailable`` rows for ``ti_proxy``, ``dust_index`` and ``silica_index``."""
+    from gsop.targets.moon import _summarise
+
+    ts = cfg.target_settings
+    tile = cfg.features.operators.tile_m
+    rows: list[dict] = []
+    for name, target in cfg.targets("mars").items():
+        if target.lat is None:
+            continue
+        window = f"{ts.target_window_km:g} km window, {ts.tile_stride_km:g} km stride, {tile / 1000:g} km tiles"
+        info = read_window(themis_source(target.lat, target.lon_e), target.lat, target.lon_e, ts.target_window_km, cache_dir, cell_m=THEMIS_CELL_M)
+        vals = _tile_values(info["dem"].astype("float64"), THEMIS_CELL_M, tile, ts.tile_stride_km * 1000.0)
+        p = _summarise(vals, ts.spread_iqr_divisor)
+        rows.append({
+            "target": name, "column": TI_COLUMN, "value": p["value"], "spread": p["spread"],
+            "source": "THEMIS quantitative thermal inertia mosaic (Fergason et al. 2006; USGS Astropedia THEMIS_TI_Mosaic_Quant_" + themis_tile_name(target.lat, target.lon_e) + "_100mpp.cub)",
+            "evidence_grade": "A", "window": window + f"; {info['shape'][1]}x{info['shape'][0]} px of 100 m", "unavailable": not np.isfinite(p["value"]),
+            "note": "raw thermal inertia J m-2 K-1 s-1/2 (stated absolute accuracy about 20%); used for the D6 Mars target check, NOT a scored column (see below)",
+        })
+        for col, why in (
+            ("ti_proxy", "unavailable: Earth ti_proxy is a day-night temperature SWING in K (high inertia = small swing); THEMIS gives thermal inertia itself (high inertia = large value), "
+                         "so the direction and units differ, and no thermal model is available to convert one into the other"),
+            ("dust_index", "unavailable: no TES dust cover index product was found (only the 8 pixel/degree TES bolometric albedo map, which is albedo, not a dust index); "
+                           "Earth dust_index is MERRA-2 atmospheric dust optical thickness scaled with Earth percentiles, so a Mars value would not be comparable"),
+            ("silica_index", "unavailable: no TES silica or surface-type map was found on the catalog pages searched; the Earth silica_index is the ASTER Quartz Index "
+                             "and its Mars equivalent has not been defined or located"),
+        ):
+            rows.append({"target": name, "column": col, "value": float("nan"), "spread": float("nan"), "source": "TES / THEMIS (not built)",
+                         "evidence_grade": "C", "window": window, "unavailable": True, "note": why})
     return rows
