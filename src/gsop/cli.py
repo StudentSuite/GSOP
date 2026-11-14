@@ -321,9 +321,33 @@ def ledger(body: Body = BodyOpt) -> None:
 
 
 @app.command()
-def golden() -> None:
-    """Run the tiny fixed slice end to end and write golden.json."""
-    _stub("golden")
+def golden(
+    update: bool = typer.Option(False, "--update", help="Rewrite the committed tests/golden/golden.json instead of comparing with it."),
+    out: Optional[Path] = typer.Option(None, "--out", help="Where to write this run's golden.json (default: results/golden.json)."),
+    workers: int = typer.Option(1, "--workers", min=1, help="Worker processes (the result does not depend on it)."),
+) -> None:
+    """Run the fixed 5,000-tile slice end to end (both bodies, 50 runs) and compare with the committed golden.json."""
+    from gsop import golden as G
+    from gsop.config import load_config
+    from gsop.paths import Paths
+
+    cfg = load_config()
+    result = G.run_golden(cfg, workers=workers, log=typer.echo)
+    path = G.write_golden(result, out or (Paths().root / "results" / "golden.json"))
+    typer.echo(f"wrote {path}")
+    if update:
+        typer.echo(f"wrote {G.write_golden(result, G.EXPECTED)} (the new expectation: commit it)")
+        return
+    if not G.EXPECTED.is_file():
+        typer.echo(f"no committed expectation at {G.EXPECTED}: run `gsop golden --update` once and commit it", err=True)
+        raise typer.Exit(1)
+    fails = G.compare(G.read_golden(), result, cfg.run.golden_score_tolerance, cfg.run.golden_top1_jaccard_min)
+    if fails:
+        typer.echo(f"GOLDEN FAILED: {len(fails)} difference(s)", err=True)
+        for f in fails[:30]:
+            typer.echo(f"  {f}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"golden OK: scores within {cfg.run.golden_score_tolerance:g}, top-1% sets Jaccard >= {cfg.run.golden_top1_jaccard_min:g}")
 
 
 @app.command("verify-data")

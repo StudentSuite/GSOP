@@ -328,6 +328,17 @@ Guard: only `cli.py` imports `gsop.ledger`, and no scoring stage lists `ledger` 
 Limits: the ledger has no body or target column, so **fidelity depends on the purpose only**: both Moon targets, and Moon and Mars, get the same number for the same purpose name, and rows that do not apply to a body (the Moon has no perchlorate) still count.
 Making it body- or target-specific needs new sourced ledger rows; none were invented.
 
+## Golden slice (issue C29)
+
+`gsop golden` runs s3, s4 and s5 on a fixed slice of 5,000 tiles per body (50 runs, master seed from `config/run.yaml`, 1 worker), writes `results/golden.json` and compares it with the committed `tests/golden/golden.json`;
+it exits 1 and prints each difference if they disagree. `gsop golden --update` rewrites the committed expectation (do this only after a deliberate change, and commit it with the change).
+Takes about one minute on an Apple M2.
+
+* Inputs: `tests/golden/<body>/earth_features_6km.parquet` and `targets_<body>.parquet` (about 600 kB each), made by `scripts/make_golden.py` from the synthetic generator of the tests (planted analog in Gaussian background, fixed seed). They are hashed byte for byte (sha256 in `golden.json`); `.gitattributes` marks parquet as binary so Windows never rewrites line endings. The whole folder is 2.3 MB (limit 5 MB).
+* `golden.json` keeps: input hashes, config hash, run count, seed, library versions (informational), and per body and target the number of gated tiles, the `score_<profile>` of every gated tile, the top-1% set of each profile, the Monte Carlo `mc_mean` and frequencies of the tiles that reached the top 10%, and the top-1% set of the Monte Carlo ranking. Floats are rounded to 6 decimals.
+* Outputs are not required to be bit-identical (a different BLAS or CPU may move the last bits of a float32); inputs are compared exactly and outputs with tolerance (see the tolerance paragraph under Golden test).
+* **What it does not prove:** the inputs are synthetic, so a pass means the code gives the same answer on two machines (and over time), not that the real data or the real scores are right. Changing any file in `config/` that the scoring uses changes `config_hash` and needs `gsop golden --update`.
+
 ## Known weaknesses
 
 TODO (grows as results arrive). Start list:

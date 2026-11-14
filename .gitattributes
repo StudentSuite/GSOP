@@ -1,0 +1,3 @@
+# Golden slice inputs are binary and hashed byte for byte: never convert line endings (matters on Windows).
+*.parquet binary
+tests/golden/golden.json text eol=lf
