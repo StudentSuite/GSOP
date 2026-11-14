@@ -92,17 +92,33 @@ def s2_earth(
         None, "--region", help="Test region 'west,south,east,north' in degrees instead of the whole globe."
     ),
     dry_run: bool = typer.Option(False, "--dry-run", help="List chunks and bands without starting any export."),
+    local_dir: Optional[Path] = typer.Option(None, "--local-dir", help="With --source local: folder holding local_sources.yaml and the rasters."),
     build_from: Optional[Path] = typer.Option(
         None, "--build-from", help="Folder of downloaded chunk GeoTIFFs: build data/processed/earth_features_6km.parquet and grid.json from them."
     ),
 ) -> None:
     """Build data/processed/earth_features_6km.parquet (Earth Engine route: start/poll the chunk exports)."""
-    if source is not EarthSource.gee:
-        _stub("s2 earth --source local")
     from gsop.config import load_config
     from gsop.earth import gee_export
 
     cfg = load_config()
+    if source is EarthSource.local:
+        if local_dir is None:
+            typer.echo("--source local needs --local-dir with local_sources.yaml and your rasters (see docs/SPEC.md)", err=True)
+            raise typer.Exit(2)
+        from gsop.earth import build_parquet, local_loaders
+
+        root = Path(__file__).resolve().parents[2] / "data"
+        try:
+            report = local_loaders.build_local_chunk(local_dir, cfg, root / "interim" / "local")
+        except local_loaders.LocalSourceError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(2)
+        typer.echo("LOCAL ROUTE: coarser than Earth Engine. Unavailable bands:")
+        for name, why in report["unavailable"].items():
+            typer.echo(f"  {name}: {why}")
+        build_parquet.build_earth_parquet([root / "interim" / "local" / "local_chunk.tif"], cfg, root / "processed", log=typer.echo)
+        return
     if build_from is not None:
         from gsop.earth import build_parquet
 
