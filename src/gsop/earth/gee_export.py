@@ -372,3 +372,46 @@ def silica_bands(ee: Any, cfg: Config) -> Any:
     qi = e11.multiply(e11).divide(e10.multiply(e12)).updateMask(ok).rename("silica_index")
     cells = int(round(ops.tile_m / 111.32)) ** 2 + 128
     return qi.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=cells)
+
+
+MODIS_LANDCOVER_ID = "MODIS/061/MCD12Q1"
+MODIS_NDVI_ID = "MODIS/061/MOD13A2"
+
+
+def gate_bands(ee: Any, cfg: Config) -> Any:
+    """Bands ``gate_water_ice_frac``, ``gate_ndvi_med``, ``gate_built_crop_frac`` at 6 km. No thresholds applied.
+
+    Definitions in ``gsop.gate_layers``. Land-cover shares are the mean of a 0/1 mask over the 500 m cells in the
+    tile; NDVI is the tile median of the per-pixel 2015-2024 median NDVI (1 km cells, QA good or marginal).
+    """
+    lc_cfg = cfg.features.land_cover
+    t = cfg.features.temperature
+    ops = cfg.features.operators
+
+    lc = (
+        ee.ImageCollection(MODIS_LANDCOVER_ID)
+        .filterDate(f"{lc_cfg['year']}-01-01", f"{lc_cfg['year'] + 1}-01-01")
+        .first()
+        .select("LC_Type1")
+    )
+
+    def share(classes: list, name: str) -> Any:
+        mask = lc.remap(classes, [1] * len(classes), 0).rename(name).toFloat()
+        return mask.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=int(round(ops.tile_m / 500.0)) ** 2 + 32)
+
+    water_ice = share(lc_cfg["water_ice_classes"], "gate_water_ice_frac")
+    built_crop = share(lc_cfg["builtup_cropland_classes"], "gate_built_crop_frac")
+
+    ndvi_col = ee.ImageCollection(MODIS_NDVI_ID).filterDate(f"{t.start_year}-01-01", f"{t.end_year + 1}-01-01")
+
+    def good_ndvi(img: Any) -> Any:
+        qa = img.select("SummaryQA")
+        ok = qa.eq(lc_cfg["ndvi_good_summary_qa"][0])
+        for extra in lc_cfg["ndvi_good_summary_qa"][1:]:
+            ok = ok.Or(qa.eq(extra))
+        return img.select("NDVI").multiply(0.0001).updateMask(ok)
+
+    proj = ndvi_col.first().select(0).projection()
+    ndvi_clim = ndvi_col.map(good_ndvi).median().setDefaultProjection(proj).rename("gate_ndvi_med")
+    ndvi6 = ndvi_clim.reduceResolution(reducer=ee.Reducer.median(), maxPixels=int(round(ops.tile_m / 926.0)) ** 2 + 64)
+    return water_ice.addBands(ndvi6).addBands(built_crop)

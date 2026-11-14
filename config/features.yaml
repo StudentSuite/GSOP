@@ -105,6 +105,14 @@ air_density:
     reference_elevation_m: 0.0                  # TODO UNSOURCED: assumes MOLA elevation 0 m is where the stated pressure applies (the sheet says "at mean radius")
     source: "NASA Mars Fact Sheet, nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html (read 2026-11-14)"
 
+# Gate layers (issue B15). Thresholds are NOT applied at export time; they live in gates.yaml.
+land_cover:
+  year: 2023                          # TUNABLE, NOT SOURCED: MCD12Q1 year used (page lists 2001-2024); a recent complete year
+  water_ice_classes: [15, 17]         # MCD12Q1 LC_Type1: 15 permanent snow and ice, 17 water bodies (catalog page, PROVENANCE)
+  builtup_cropland_classes: [12, 13, 14]   # 12 cropland, 13 urban and built-up, 14 cropland/natural vegetation mosaic.
+                                      # TUNABLE: class 14 is only partly farmed and may overstate the fraction; drop it to be stricter
+  ndvi_good_summary_qa: [0, 1]        # MOD13A2 SummaryQA kept: 0 good, 1 marginal (2 snow/ice and 3 cloudy are dropped)
+
 features:
   slope_med:
     definition: "Median over the 6 km tile of slope computed at one shared 500 m baseline"
@@ -309,17 +317,20 @@ features:
 # Earth-only layers used by the gates (gates.yaml). They are not scored.
 gate_layers:
   water_ice_fraction:
+    band: gate_water_ice_frac
     definition: "Share of the tile covered by open water or permanent ice"
     units: "fraction 0-1"
     sources:
-      earth: {name: "no dataset chosen yet (water and permanent-ice product)", lead: true}
+      earth: {name: "MODIS land cover MCD12Q1 (MODIS/061/MCD12Q1), classes 17 and 15; verified in PROVENANCE", lead: false}
   ndvi_median:
+    band: gate_ndvi_med
     definition: "Median NDVI over the tile"
     units: "NDVI -1 to 1"
     sources:
       earth: {name: "MODIS NDVI, 2015-2024", lead: true}
   builtup_cropland_fraction:
+    band: gate_built_crop_frac
     definition: "Share of the tile that is built-up or farmed land"
     units: "fraction 0-1"
     sources:
-      earth: {name: "no dataset chosen yet (land-cover product)", lead: true}
+      earth: {name: "MODIS land cover MCD12Q1 (MODIS/061/MCD12Q1), classes 12, 13, 14; verified in PROVENANCE", lead: false}

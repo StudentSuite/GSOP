@@ -322,6 +322,7 @@ class Features:
     water_index: WaterIndexSettings
     silica_index: SilicaSettings
     air_density: dict[str, Any]
+    land_cover: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -641,7 +642,7 @@ def _parse_ledger(raw: Any, purposes: dict, w: _Warn) -> Ledger:
 def _parse_features(raw: Any, w: _Warn) -> Features:
     f = "features.yaml"
     raw = _map(raw, f)
-    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature", "water_index", "silica_index", "air_density"), f)
+    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature", "water_index", "silica_index", "air_density", "land_cover"), f)
     ow = f"{f}: operators"
     op = _map(_need(raw, "operators", f), ow)
     w.unknown(op, ("grid_crs", "tile_m", "baseline_m", "slope_method", "max_nan_fraction", "earth_dem"), ow)
@@ -737,6 +738,13 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         _str(_need(block, "source", bw), f"{bw}.source")
         for key in keys:
             _num(_need(block, key, bw), f"{bw}.{key}")
+    lw = f"{f}: land_cover"
+    lc = _map(_need(raw, "land_cover", f), lw)
+    w.unknown(lc, ("year", "water_ice_classes", "builtup_cropland_classes", "ndvi_good_summary_qa"), lw)
+    _int(_need(lc, "year", lw), f"{lw}.year", lo=2001)
+    for key in ("water_ice_classes", "builtup_cropland_classes", "ndvi_good_summary_qa"):
+        for i, v in enumerate(_list(_need(lc, key, lw), f"{lw}.{key}", non_empty=True)):
+            _int(v, f"{lw}.{key}[{i}]", lo=0)
     cols: dict[str, Feature] = {}
     known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy", "availability")
     for name, spec in _map(_need(raw, "features", f), f"{f}: features").items():
@@ -789,7 +797,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         spec = _map(spec, where)
         _str(_need(spec, "definition", where), f"{where}.definition")
         layers[name] = dict(spec)
-    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature, water_index=water_index, silica_index=silica, air_density=ad)
+    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature, water_index=water_index, silica_index=silica, air_density=ad, land_cover=lc)
 
 
 def _parse_run(raw: Any, w: _Warn) -> RunConfig:

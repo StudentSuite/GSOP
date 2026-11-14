@@ -30,6 +30,10 @@ TODO (phase B). Fixed by decision D1: 6 km x 6 km tiles on the equal-area grid E
 
 Columns, sources and uncertainty floors are in `config/features.yaml`. `water_index` and `silica_index` are cross-instrument proxies and are the two weakest comparisons in the index. Other feature definitions are added below by the issue that builds each one.
 
+### Gate layers (issue B15)
+
+Three Earth-only bands are exported at 6 km and **no threshold is applied at export** (stage s3 does that with `config/gates.yaml`): `gate_water_ice_frac` (share of 500 m MCD12Q1 cells that are water bodies, class 17, or permanent snow and ice, class 15), `gate_ndvi_med` (tile median of the per-pixel 2015-2024 median NDVI of MOD13A2 with SummaryQA good or marginal), `gate_built_crop_frac` (share that is cropland 12, urban and built-up 13, or cropland/natural mosaic 14). Class numbers, the land-cover year (2023) and the QA values are in `config/features.yaml`, block `land_cover` (tunable, unsourced). Reference definitions: `src/gsop/gate_layers.py`. Class 14 is only partly farmed, so the farmland share may be overstated.
+
 ### `air_density` (issue B14, Mars family only)
 
 One pure function (`src/gsop/features_misc.py`), no constants in code; all in `config/features.yaml` block `air_density` with sources. **Earth**: International Standard Atmosphere troposphere, `T = T0 - L h`, `p = p0 (T/T0)^(g/(R L))`, `rho = p / (R T)`, from the DEM elevation, valid to 11 km (tested against 1.225 kg/m3 at sea level and 0.3639 at 11,000 m, both printed on the ISA page). **Mars**: isothermal exponential, `rho = rho0 exp(-(h - h_ref)/H)` with `rho0 = p0 / (R_specific T)`; constants from the NASA Mars Fact Sheet (6.36 mb, scale height 11.0 km, 214 K, molecular weight 43.49), which reproduce the sheet's own surface density (about 0.0155 against 0.016 +/- 0.006 kg/m3). The Mars pressure datum is an open TODO (see `docs/UNVERIFIED.md`). The Moon has no air; it does not use this column.
