@@ -194,6 +194,16 @@ TODO (phase E). See `docs/RESULTS_SCHEMA.md` once it exists.
 
 TODO (phase E). Robust tiles more than 100 km from every known site.
 
+## Target profiles (s2 targets)
+
+### Moon terrain (issue B25)
+
+`src/gsop/targets/moon.py`. Source: the Barker et al. (2021) 5 m LOLA site DEMs on NASA PGDA (`Site01` = Connecting Ridge, `Site04` = Shackleton rim). A 15 km window centred on the target (shifted, not shrunk, to stay inside the 16 km tile; Shackleton rim sits 1.9 km off its tile centre) is read with a windowed `rasterio` read, never the full-planet DEM. The one shared operator (`operators.tile_features`) gives `slope_med`, `slope_p90`, `relief`, `rough_a`, `rough_b` on 6 km tiles at 3 km stride inside the window (16 overlapping tiles, so they are not independent). **Value = median over tiles, spread = IQR / 1.349.** Every row carries `source`, `evidence_grade` (A) and `window`. The window is read without a halo, so border tiles lose their outermost slope cells (under the 20% missing-cell limit).
+
+First real values (2026-11-14, 5 m LOLA through the shared operator): Connecting Ridge `slope_med` 8.75 deg (spread 1.2), `slope_p90` 17.7, `relief` 1045 m, `rough_a` 142 m, `rough_b` 130 m; Shackleton rim `slope_med` 23.3 deg (spread 13.2), `slope_p90` 31.6, `relief` 2404 m (spread 1412), `rough_a` 184 m, `rough_b` 169 m.
+
+**Two consequences to read before trusting any Moon result.** (1) Connecting Ridge's own median tile slope (8.75 deg) is already above the Moon landing-mobility extra gate (`slope_med <= 8`), so the target would fail the gate that applies to the candidates (decision D6 only covers the Mars target check). (2) For every tile `rough_b <= rough_a` is the normal order: both are RMS over the same 6 km tile and the coarser baseline averages away short wavelengths (tested in `tests/test_operators.py`). The issue text (B06, B20) expects `rough_b >= rough_a`; that expectation contradicts the operator definition and the Earth QA check was changed accordingly.
+
 ## Ledger and fidelity
 
 TODO (phase C). Limits ledger `config/ledger.yaml`, reported beside every score and never multiplied into it. `fidelity = 100 * mean(status_value over the ledger rows relevant to that purpose)`, Broken 0, Partly 0.5, Matchable 1. The relevance matrix is provisional until Anay and Vihaan review it.
