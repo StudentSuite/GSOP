@@ -13,9 +13,9 @@ CFG = load_config(Path(__file__).resolve().parents[1] / "config")
 MARS_CHECK_ROWS = {"elevation_mean": -2500.0, "thermal_inertia_themis": 313.0}
 
 
-def target_rows(body, cfg=CFG, mars_elevation=-2500.0, only=None, drop_columns=()):
+def target_rows(body, cfg=CFG, mars_elevation=-2500.0, only=None, drop_columns=(), away=None):
     """Rows in the targets_{body}.parquet format for every scored target, all with the synthetic profile of ``body``."""
-    prof = synth.target_profile(body, cfg)
+    prof = synth.target_profile(body, cfg, away)
     rows = []
     for name, t in cfg.targets(body).items():
         if t.lat is None or (only and name not in only):
@@ -34,15 +34,15 @@ def target_rows(body, cfg=CFG, mars_elevation=-2500.0, only=None, drop_columns=(
     return rows
 
 
-def write_inputs(tmp: Path, body: str, n: int = 5000, seed: int = 0, cfg=CFG, **kw):
+def write_inputs(tmp: Path, body: str, n: int = 5000, seed: int = 0, cfg=CFG, away=None, **kw):
     """Write ``earth_features_6km.parquet`` and ``targets_{body}.parquet`` under ``tmp/data/processed``; return (root, grid, rows)."""
-    g = synth.make_grid(n, seed=seed, body=body, cfg=cfg)
+    g = synth.make_grid(n, seed=seed, body=body, cfg=cfg, away=away)
     out = tmp / "data" / "processed"
     out.mkdir(parents=True, exist_ok=True)
     df = g.df.copy()
     df["x_m"], df["y_m"], df["land"], df["land_frac"] = 0.0, 0.0, True, np.float32(1.0)
     df.to_parquet(out / "earth_features_6km.parquet")
-    rows = target_rows(body, cfg, **kw)
+    rows = target_rows(body, cfg, away=away, **kw)
     frame = TG.to_frame(rows, cfg, body)
     import pyarrow as pa
     import pyarrow.parquet as pq
