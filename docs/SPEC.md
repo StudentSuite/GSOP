@@ -310,7 +310,7 @@ Python allocations were 452 MB of that; the rest is allocator retention. That ru
 `gsop s5 simulate` compares the estimate with the free RAM and the `gsop doctor` chunk budget before every profile: not enough free RAM stops the run with `MemoryBudgetError`; only the budget being exceeded logs a warning.
 
 The slow test `tests/test_memory.py` runs the real 4,000,000-tile case and asserts the measured peak against the estimate and the budget. **It is skipped when the doctor budget is below the estimate**,
-as on the 16 GB development laptop with about 1.8 GB free; so the literal assertion has not been checked since the estimate was recalibrated. Run it with `--runslow` on a machine with more free RAM.
+as on the 8 GB development laptop with about 1.8 GB free; so the literal assertion has not been checked since the estimate was recalibrated. Run it with `--runslow` on a machine with more free RAM.
 The estimate for 8 workers is untested; worker count is the one knob that raises memory.
 
 ## Ledger and fidelity
