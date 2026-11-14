@@ -79,6 +79,11 @@ water_index:
   # or `zero` (treat as no permafrost; lets the Southern Hemisphere and non-permafrost land be scored).
   permafrost_outside_domain: nan
 
+# Earth silica_index = ASTER Quartz Index QI = (e11 * e11) / (e10 * e12), emissivity bands of ASTER GED. Method in docs/SPEC.md.
+silica_index:
+  formula: quartz_index       # Ninomiya et al. 2005 (Remote Sensing of Environment), QI as quoted in arXiv 1107.3499
+  aster_emissivity_scale: 0.001   # catalog page: emissivity_band10..14 scale 0.001
+
 features:
   slope_med:
     definition: "Median over the 6 km tile of slope computed at one shared 500 m baseline"

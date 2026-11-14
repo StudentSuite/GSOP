@@ -30,6 +30,15 @@ TODO (phase B). Fixed by decision D1: 6 km x 6 km tiles on the equal-area grid E
 
 Columns, sources and uncertainty floors are in `config/features.yaml`. `water_index` and `silica_index` are cross-instrument proxies and are the two weakest comparisons in the index. Other feature definitions are added below by the issue that builds each one.
 
+### Earth `silica_index` (issue B13)
+
+The weakest cross-instrument comparison with `water_index`. **Earth**: ASTER Quartz Index of Ninomiya et al. (2005, *Remote Sensing of Environment*, as quoted in arXiv 1107.3499), `QI = (e11 * e11) / (e10 * e12)`, with `eN` the emissivity in ASTER thermal-infrared band N from ASTER GED v003 (`emissivity_band10`..`12`, scale 0.001), averaged to the 6 km tile (`src/gsop/silica.py`, `gee_export.silica_bands`). **Direction: higher = more silica-rich.** Quartz-rich rock has emissivity minima near bands 10 and 12 and a higher value at band 11.
+
+- **Moon**: the Diviner Christiansen feature. Its wavelength moves **shorter** as silica increases, so the lunar index must be a decreasing function of the Christiansen-feature wavelength to keep the same direction (higher = more silica-rich). Defined in issue B26.
+- **Mars**: TES-derived silica/surface-composition index, with higher = more silica-rich. Defined in issue B29.
+
+Limits: the published QI was defined for radiance-at-sensor data, here it is applied to emissivity, so values are not comparable with the paper's maps; QI is a quartz index correlated with bulk SiO2, not SiO2 content (the 2002 SiO2 content index was not retrieved); ASTER GED is 2000-2008, has gaps (see Known weaknesses), and EMIT is not used. Whether the three instruments' indices share a scale is **not established**: the similarity score treats them as comparable, which is the assumption to challenge first.
+
 ### Earth `dust_index` (issue B12)
 
 Mars thermal-inertia family column (it shares the family's weight with `ti_proxy`). **Status: built with a caveat, not unavailable.** Earth Engine exports `dust_index_raw`, the annual-mean MERRA-2 dust extinction aerosol optical thickness at 550 nm (`NASA/GSFC/MERRA/aer/2`, band `DUEXTTAU`, noon-UTC value of each day, 2015-2024). At build time (issue B18) it is scaled to 0..1 as `clip((raw - lo) / (hi - lo), 0, 1)` with `lo`, `hi` the 1st and 99th percentile over land tiles, so no cap is invented (`src/gsop/dust.py`); higher = more dust. Caveats: MERRA-2 cells are 69375 x 55000 m, about ten times coarser than a tile, so neighbouring tiles share a value; and it measures atmospheric dust while the Mars column (TES) is surface albedo and dust cover, so the two are not the same quantity.

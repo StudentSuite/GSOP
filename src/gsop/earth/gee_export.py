@@ -353,3 +353,22 @@ def dust_bands(ee: Any, cfg: Config) -> Any:
         .select("DUEXTTAU")
     )
     return col.mean().rename("dust_index_raw")
+
+
+ASTER_GED_ID = "NASA/ASTER_GED/AG100_003"
+
+
+def silica_bands(ee: Any, cfg: Config) -> Any:
+    """Band ``silica_index``: ASTER Quartz Index ``(e11 * e11) / (e10 * e12)``, averaged to the 6 km tile.
+
+    ASTER GED v003 (2000-2008, 111.32 m). Water pixels (``land_water_map`` = 2) and non-positive emissivities are
+    masked. Higher = more silica-rich. Gaps in ASTER GED become masked pixels, hence NaN tiles; see SPEC.
+    """
+    scale = cfg.features.silica_index.aster_emissivity_scale
+    ops = cfg.features.operators
+    img = ee.Image(ASTER_GED_ID)
+    e10, e11, e12 = (img.select(f"emissivity_band{n}").multiply(scale) for n in (10, 11, 12))
+    ok = e10.gt(0).And(e11.gt(0)).And(e12.gt(0)).And(img.select("land_water_map").eq(1))
+    qi = e11.multiply(e11).divide(e10.multiply(e12)).updateMask(ok).rename("silica_index")
+    cells = int(round(ops.tile_m / 111.32)) ** 2 + 128
+    return qi.reduceResolution(reducer=ee.Reducer.mean(), maxPixels=cells)

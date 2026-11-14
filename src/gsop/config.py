@@ -307,6 +307,12 @@ class WaterIndexSettings:
 
 
 @dataclass(frozen=True)
+class SilicaSettings:
+    formula: str
+    aster_emissivity_scale: float
+
+
+@dataclass(frozen=True)
 class Features:
     columns: dict[str, Feature]
     gate_layers: dict[str, dict[str, Any]]
@@ -314,6 +320,7 @@ class Features:
     illumination: IlluminationSettings
     temperature: TemperatureSettings
     water_index: WaterIndexSettings
+    silica_index: SilicaSettings
 
 
 @dataclass(frozen=True)
@@ -633,7 +640,7 @@ def _parse_ledger(raw: Any, purposes: dict, w: _Warn) -> Ledger:
 def _parse_features(raw: Any, w: _Warn) -> Features:
     f = "features.yaml"
     raw = _map(raw, f)
-    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature", "water_index"), f)
+    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature", "water_index", "silica_index"), f)
     ow = f"{f}: operators"
     op = _map(_need(raw, "operators", f), ow)
     w.unknown(op, ("grid_crs", "tile_m", "baseline_m", "slope_method", "max_nan_fraction", "earth_dem"), ow)
@@ -707,6 +714,13 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
     )
     if water_index.aridity_ai_cap <= 0:
         _fail(f"{ww}.aridity_ai_cap", "must be above 0")
+    sw = f"{f}: silica_index"
+    si = _map(_need(raw, "silica_index", f), sw)
+    w.unknown(si, ("formula", "aster_emissivity_scale"), sw)
+    silica = SilicaSettings(
+        formula=_choice(_need(si, "formula", sw), ("quartz_index",), f"{sw}.formula"),
+        aster_emissivity_scale=_num(_need(si, "aster_emissivity_scale", sw), f"{sw}.aster_emissivity_scale", lo=0),
+    )
     cols: dict[str, Feature] = {}
     known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy", "availability")
     for name, spec in _map(_need(raw, "features", f), f"{f}: features").items():
@@ -759,7 +773,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         spec = _map(spec, where)
         _str(_need(spec, "definition", where), f"{where}.definition")
         layers[name] = dict(spec)
-    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature, water_index=water_index)
+    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature, water_index=water_index, silica_index=silica)
 
 
 def _parse_run(raw: Any, w: _Warn) -> RunConfig:
