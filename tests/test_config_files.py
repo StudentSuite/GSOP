@@ -232,3 +232,53 @@ def test_earth_sources_are_leads_until_verified():
         earth = f.sources.get("earth")
         if earth and any(k in earth["name"] for k in ("NASADEM", "MODIS", "ASTER", "MERRA")):
             assert earth.get("lead") is True, name
+
+
+# --- A11: targets.yaml ------------------------------------------------------
+def _parse_targets():
+    sink = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        out = C._parse_targets(read("targets"), C._Warn(sink))
+    assert sink == []
+    return out
+
+
+def test_moon_targets_match_setup_prompt():
+    targets, _ = _parse_targets()
+    c1 = targets["moon"]["connecting_ridge_c1"]
+    assert (c1.lat, c1.lon_e, c1.source) == (-89.45, 222.84, "Glaser 2018")
+    assert c1.attributes == {
+        "lit_surface_pct": 76.0, "lit_2m_pct": 88.0, "max_shadow_h_surface": 268,
+        "max_shadow_h_2m": 112, "nearest_psr_m": 100, "psr_slope_deg": 8.4,
+    }
+    rim = targets["moon"]["shackleton_rim"]
+    assert (rim.lat, rim.lon_e, rim.source) == (-89.78, 203.97, "Glaser 2018")
+    assert rim.attributes == {
+        "lit_surface_pct": 81.0, "lit_2m_pct": 85.5, "max_shadow_h_surface": 221,
+        "max_shadow_h_2m": 66, "nearest_psr_m": 370,
+    }
+    assert set(targets["moon"]) == {"connecting_ridge_c1", "shackleton_rim"}, "no C2, no Malapert"
+
+
+def test_mars_targets_and_arcadia_is_not_guessed():
+    targets, _ = _parse_targets()
+    j = targets["mars"]["jezero"]
+    assert (j.lat, j.lon_e, j.source) == (18.4386, 77.5031, "Grant 2018")
+    a = targets["mars"]["arcadia"]
+    assert a.lat is None and a.lon_e is None
+    assert a.status == "unscored_no_target_data"
+
+
+def test_target_window_settings():
+    _, s = _parse_targets()
+    assert s.target_window_km == 15
+    assert s.tile_stride_km == 3
+    assert s.spread_iqr_divisor == 1.349
+    assert s.receiver_height_m == 2
+
+
+def test_no_c2_anywhere_in_targets_file():
+    lines = (CONFIG_DIR / "targets.yaml").read_text(encoding="utf-8").splitlines()
+    data = "\n".join(line.split("#")[0] for line in lines).lower()
+    assert "c2" not in data.replace("connecting_ridge_c1", "")
