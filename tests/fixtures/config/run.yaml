@@ -9,3 +9,5 @@ novelty_radius_km: 100
 convergence_checkpoints: [500, 1000, 1500, 2000]
 golden: {score_tolerance: 1.0e-4, top1_jaccard_min: 0.99, tiles: 5000, runs: 50}
 operator_check_tolerance: 0.10
+sigma_iqr_multiplier: 0.25
+unavailable_target_families: error

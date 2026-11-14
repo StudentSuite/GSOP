@@ -33,3 +33,11 @@ operator_check_tolerance: 0.10          # gsop check-operators: Earth Engine vs 
 # variable GSOP_EE_PROJECT instead (it wins over this value). Never commit a project ID.
 earth_engine:
   project: null
+
+# Sigma rule (docs/SPEC.md): sigma_k = max(target_spread_k, measurement_uncertainty_k, sigma_iqr_multiplier * IQR_k over gated Earth tiles).
+sigma_iqr_multiplier: 0.25              # setup prompt, section 3
+
+# What to do when a target has NO usable value for any column of a family (a product could not be built, see targets_{body}.md):
+#   error                 stop and name the family (default: nothing is silently dropped)
+#   drop_and_renormalise  leave the family out and renormalise the remaining weights (departs from the published weights; Anay decides)
+unavailable_target_families: error

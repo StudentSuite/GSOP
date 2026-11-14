@@ -167,7 +167,14 @@ TODO (phase C). Thresholds are in `config/gates.yaml`; the landing_mobility extr
 
 ## Similarity (s4)
 
-TODO (phase C). Per column `s_k = exp(-0.5 * ((x_tile - x_target) / sigma_k)^2)`; a family's score is the mean of its columns' similarities; tile score `100 * sum_f w_f * S_f`.
+`src/gsop/similarity.py`. Per column `s_k = exp(-0.5 * ((x_tile - x_target) / sigma_k)^2)` in [0, 1]; a family's score `S_f` is the mean of its columns' `s_k`; tile score `100 * sum_f w_f * S_f`, in [0, 100].
+
+- **Missing is missing.** A NaN column makes its family NaN and a NaN family makes the tile score NaN; it is never treated as 0. A family with weight 0 (alternative weight sets) is skipped so it cannot poison the score. The gate stage decides what to do with missing tiles.
+- **No overflow.** The squared distance is clipped at 170 before the exponential, so a tile 13 or more sigma away scores about 1e-37 (a normal float32), never NaN or inf. Such tiles tie with each other, which does not matter for ranking.
+- **Deterministic across machines.** float32 element-wise arithmetic with a fixed left-to-right order over columns and families: no BLAS matmul and no layout-dependent mean, so the score of a tile is bit-identical whatever the chunk size (the chunk size depends on each machine's RAM).
+- **One function** (`score_tiles(x, target, sigma, family_cols, weights)`) serves a single scoring run and the Monte Carlo inner loop; it also returns the per-family similarity matrix (needed for `illumination_match` and for "which families drive the match").
+- **Target set-up (`make_setup`).** The columns are those the body's weights use. A column the target has no value for (an `unavailable` row) is dropped from its family, so the family mean uses the remaining columns (the family keeps its weight). A family left with no column follows `unavailable_target_families` in `config/run.yaml`: `error` (default; stops and names the family) or `drop_and_renormalise` (leaves the family out and renormalises the rest; this departs from the published weights and is for Anay to decide).
+- **Throughput** (measured 2026-11-14 on the Apple M2 with `scripts/bench_similarity.py`, one core, quiet process): about 17 million tiles/s for the Moon (12 columns, 8 families) and about 14 million tiles/s for Mars (14 columns, 9 families). One scoring pass over 4 million tiles is therefore about 0.3 s per core.
 
 ## Sigma rule (s4)
 

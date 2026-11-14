@@ -346,6 +346,8 @@ class RunConfig:
     golden_runs: int
     operator_check_tolerance: float
     ee_project: Optional[str] = None
+    sigma_iqr_multiplier: float = 0.25
+    unavailable_target_families: str = "error"
 
 
 # ---------------------------------------------------------------------------
@@ -842,7 +844,7 @@ def _parse_run(raw: Any, w: _Warn) -> RunConfig:
     allowed = (
         "runs", "master_seed", "top_fractions", "robust", "candidate_fraction", "chunk_ram_fraction",
         "site_match_radius_km", "novelty_radius_km", "convergence_checkpoints", "golden",
-        "operator_check_tolerance", "earth_engine",
+        "operator_check_tolerance", "earth_engine", "sigma_iqr_multiplier", "unavailable_target_families",
     )
     w.unknown(raw, allowed, f)
     robust = _map(_need(raw, "robust", f), f"{f}: robust")
@@ -875,6 +877,8 @@ def _parse_run(raw: Any, w: _Warn) -> RunConfig:
         golden_runs=_int(_need(golden, "runs", f"{f}: golden"), f"{f}: golden.runs", lo=1),
         operator_check_tolerance=_num(_need(raw, "operator_check_tolerance", f), f"{f}: operator_check_tolerance", lo=0),
         ee_project=ee_project,
+        sigma_iqr_multiplier=_num(raw.get("sigma_iqr_multiplier", 0.25), f"{f}: sigma_iqr_multiplier", lo=0),
+        unavailable_target_families=_choice(raw.get("unavailable_target_families", "error"), ("error", "drop_and_renormalise"), f"{f}: unavailable_target_families"),
     )
 
 

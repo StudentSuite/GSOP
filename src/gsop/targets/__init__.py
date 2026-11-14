@@ -14,6 +14,7 @@ Assembles the rows produced by the per-body modules into ``data/processed/target
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -34,6 +35,40 @@ GRADES = ("A", "B", "C")
 
 class TargetError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class TargetProfile:
+    """One scored target: value and spread per column; ``unavailable`` columns have no usable value."""
+
+    name: str
+    values: dict  # column -> value (NaN where unavailable)
+    spread: dict  # column -> spread
+    unavailable: frozenset  # columns marked unavailable
+    unscored: bool = False
+
+    def has_value(self, column: str) -> bool:
+        v = self.values.get(column)
+        return v is not None and column not in self.unavailable and np.isfinite(v)
+
+
+def read_targets(path: Path) -> pd.DataFrame:
+    """Read ``targets_{body}.parquet``."""
+    return pd.read_parquet(path)
+
+
+def profiles_from_frame(df: pd.DataFrame) -> dict[str, TargetProfile]:
+    """Scored targets of a targets table (unscored ones are returned with ``unscored=True`` and no values)."""
+    out: dict[str, TargetProfile] = {}
+    for name, sub in df.groupby("target", sort=False):
+        if bool(sub["unscored"].any()):
+            out[name] = TargetProfile(name, {}, {}, frozenset(), True)
+            continue
+        out[name] = TargetProfile(
+            name, dict(zip(sub["column"], sub["value"].astype(float))), dict(zip(sub["column"], sub["spread"].astype(float))),
+            frozenset(sub.loc[sub["unavailable"], "column"]),
+        )
+    return out
 
 
 def collect_rows(cfg: Config, body: str, cache_dir: Optional[Path] = None, diviner_dir: Optional[Path] = None) -> list[dict]:
