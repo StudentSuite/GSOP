@@ -84,6 +84,7 @@ class Runner:
     body: Optional[str] = None
     runs: Optional[int] = None
     base_dir: Optional[Path] = None  # inputs/outputs are named relative to this in hashes
+    write_meta: bool = True  # False for body-independent stages (s1) that have no results/<body>/run_meta.json
     log: Callable[[str], None] = print
     results: list[StageResult] = field(default_factory=list)
 
@@ -198,7 +199,7 @@ class Runner:
             ) + "\n",
         )
         self.results.append(StageResult(stage.name, "ran", reason, seconds))
-        if self.cfg is not None:
+        if self.cfg is not None and self.write_meta:
             from gsop.runmeta import record_stage  # local import: runmeta imports config only
 
             record_stage(Path(self.results_dir), self.cfg, stage.name, seconds, self.body, self.runs)

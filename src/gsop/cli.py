@@ -73,9 +73,24 @@ app.add_typer(s1, name="s1")
 
 
 @s1.command("tiles")
-def s1_tiles() -> None:
-    """Grid + land mask -> data/interim/tiles.parquet."""
-    _stub("s1 tiles")
+def s1_tiles(force: bool = typer.Option(False, "--force", help="Rerun even if nothing changed.")) -> None:
+    """Grid + land mask -> data/interim/tiles.parquet (skipped by the runner when inputs and config are unchanged)."""
+    from gsop.config import load_config
+    from gsop.runner import Runner, RunnerError
+    from gsop.stages import s1
+
+    root = Path(__file__).resolve().parents[2] / "data"
+    cfg = load_config()
+    earth = root / "processed" / "earth_features_6km.parquet"
+    stage = s1.stage(cfg, earth, root / "interim" / "tiles.parquet", log=typer.echo)
+    if not earth.is_file():
+        typer.echo(f"{earth} does not exist: build the Earth file first (`gsop s2 earth`, issues B16 to B18)", err=True)
+        raise typer.Exit(1)
+    try:
+        Runner(root / "interim", cfg, base_dir=root, log=typer.echo, write_meta=False).run([stage], force=["s1"] if force else ())
+    except (s1.TilesError, RunnerError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
 
 
 # --- s2 -------------------------------------------------------------------

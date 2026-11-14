@@ -763,9 +763,11 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         _fail(f"{xw}.cloud_bucket", "required when destination is cloud_storage")
     bw2 = f"{f}: earth_build"
     eb = _map(_need(raw, "earth_build", f), bw2)
-    w.unknown(eb, ("land_min_fraction", "nan_warn_fraction", "dust_percentiles"), bw2)
+    w.unknown(eb, ("land_min_fraction", "nan_warn_fraction", "expected_land_tiles", "expected_land_tolerance", "dust_percentiles"), bw2)
     _num(_need(eb, "land_min_fraction", bw2), f"{bw2}.land_min_fraction", lo=0, hi=1)
     _num(_need(eb, "nan_warn_fraction", bw2), f"{bw2}.nan_warn_fraction", lo=0, hi=1)
+    _int(_need(eb, "expected_land_tiles", bw2), f"{bw2}.expected_land_tiles", lo=1)
+    _num(_need(eb, "expected_land_tolerance", bw2), f"{bw2}.expected_land_tolerance", lo=0, hi=1)
     dp = _list(_need(eb, "dust_percentiles", bw2), f"{bw2}.dust_percentiles")
     if len(dp) != 2 or not 0 <= _num(dp[0], f"{bw2}.dust_percentiles[0]") < _num(dp[1], f"{bw2}.dust_percentiles[1]") <= 100:
         _fail(f"{bw2}.dust_percentiles", "must be [low, high] with 0 <= low < high <= 100")

@@ -104,7 +104,7 @@ def audit() -> tuple[list[tuple[str, str, str]], list[str]]:
     if ep.is_file():
         import pyarrow.parquet as pq
 
-        known = set(cfg.features.columns) | {"tile_id", "lat", "lon", "x_m", "y_m", "land", "elevation_mean", "t_low_obs", "ti_proxy_fallback"}
+        known = set(cfg.features.columns) | {"tile_id", "lat", "lon", "x_m", "y_m", "land", "elevation_mean", "t_low_obs", "ti_proxy_fallback", "land_frac"}
         known |= set(cfg.features.gate_layers) | {f"{c}_unavailable" for c in cfg.features.columns}
         for col in pq.ParquetFile(ep).schema_arrow.names:
             rows.append((f"earth_features_6km.{col}", "ok" if col in known else "MISSING", "documented column" if col in known else "column not in features.yaml"))

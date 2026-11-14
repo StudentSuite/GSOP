@@ -117,6 +117,7 @@ def build_block(ds, win, cfg: Config, grid: GridInfo, to_lonlat: Transformer, du
     iy = np.rint((grid.y_top - y) / grid.tile_m - 0.5).astype("int64")
     data: dict[str, np.ndarray] = {
         "tile_id": iy * grid.nx + ix, "lat": lat, "lon": lon, "x_m": x, "y_m": y, "land": np.ones(rows.size, dtype=bool),
+        "land_frac": land_frac[land].astype("float32"),
     }
     for col, band in RASTER_FEATURES.items():
         arr = _read_band(ds, band, win)
