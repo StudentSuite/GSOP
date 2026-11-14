@@ -311,6 +311,16 @@ def run(body: Body = BodyOpt, runs: Optional[int] = RunsOpt, target_check: Optio
 
 
 @app.command()
+def ledger(body: Body = BodyOpt) -> None:
+    """Write fidelity.json (limits ledger and Fidelity 0-100 per target x purpose; never used in the score)."""
+    from gsop.ledger import write_fidelity
+
+    cfg, paths = load_config(), Paths()
+    path = write_fidelity(cfg, body.value, paths.results(body.value))
+    typer.echo(f"wrote {path}")
+
+
+@app.command()
 def golden() -> None:
     """Run the tiny fixed slice end to end and write golden.json."""
     _stub("golden")

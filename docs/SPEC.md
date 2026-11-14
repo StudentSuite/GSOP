@@ -315,7 +315,18 @@ The estimate for 8 workers is untested; worker count is the one knob that raises
 
 ## Ledger and fidelity
 
-TODO (phase C). Limits ledger `config/ledger.yaml`, reported beside every score and never multiplied into it. `fidelity = 100 * mean(status_value over the ledger rows relevant to that purpose)`, Broken 0, Partly 0.5, Matchable 1. The relevance matrix is provisional until Anay and Vihaan review it.
+Implemented in `src/gsop/ledger.py` (issue C27); `gsop ledger --body moon|mars` writes `results/<body>/fidelity.json`.
+
+The limits ledger `config/ledger.yaml` is reported beside every score and **never multiplied into it**. `fidelity = 100 * mean(status_value over the ledger rows relevant to the purpose)`, Broken 0, Partly 0.5, Matchable 1.
+The relevant rows are the ones the relevance matrix lists under the purpose. Hand-worked values (base 25, landing_mobility 16.7, power_night 25, ice_resources 33.3, geology_life 40) are asserted in `tests/test_ledger.py`.
+
+`fidelity.json` has one entry per target x purpose (the rows behind the number, each with its reason, status value and provisional flag) and a table of all 12 ledger rows for the site.
+`relevance_provisional` is true until Anay and Vihaan review the matrix; two rows (`electrostatic_dust`, `regolith_mechanics`) are provisional because they come from an unverified report; every entry carries both flags.
+
+Guard: only `cli.py` imports `gsop.ledger`, and no scoring stage lists `ledger` among its `config_parts`, so editing the ledger cannot change a score or force a re-run of s3/s4/s5 (tests assert both).
+
+Limits: the ledger has no body or target column, so **fidelity depends on the purpose only**: both Moon targets, and Moon and Mars, get the same number for the same purpose name, and rows that do not apply to a body (the Moon has no perchlorate) still count.
+Making it body- or target-specific needs new sourced ledger rows; none were invented.
 
 ## Known weaknesses
 
