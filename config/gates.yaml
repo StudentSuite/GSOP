@@ -1,0 +1,31 @@
+# Gates (setup prompt section A3). A tile failing any gate is rejected and the
+# reason is logged per tile using the stable `reason_codes` strings below.
+#
+# Which thresholds are sourced and which are not:
+#   water_ice_fraction          TUNABLE, NOT SOURCED. Set by Anay (plan file, "Gates").
+#   ndvi_median                 TUNABLE, NOT SOURCED. Set by Anay; "tune".
+#   builtup_cropland_fraction   TUNABLE, NOT SOURCED. Set by Anay.
+#   mars_target_check           Basis: Mashal 2025 (plan file, "Gates"). Mode is `warn` (decision D6):
+#                               a failing target is still run and labelled fails_own_gate: true.
+#                               The unit of min_thermal_inertia is not stated in the setup prompt;
+#                               confirm the unit when the Mars target profiles are built (docs/UNVERIFIED.md).
+#   landing_mobility extra gate Lives in purposes.yaml (Moon: slope_med <= 8, Mars: slope_p90 <= 30).
+#                               Basis: Jia 2022; Golombek 2012.
+#   missing data                No threshold: any feature the target's weights use must be present.
+thresholds:
+  water_ice_fraction: 0.5         # reject if open water or permanent ice covers MORE than this share of the tile
+  ndvi_median: 0.2                # reject if median NDVI is ABOVE this
+  builtup_cropland_fraction: 0.2  # reject if built-up or farmed land covers MORE than this share of the tile
+  mars_target_check:
+    mode: warn                    # warn | reject  (D6: warn by default)
+    max_abs_lat_deg: 50           # target must lie within +/- this latitude
+    max_elevation_m: 2000         # target elevation must be below this (2 km)
+    min_thermal_inertia: 100      # target thermal inertia must be at least this
+
+reason_codes:
+  water_ice: WATER_OR_ICE
+  vegetation: NDVI_HIGH
+  builtup_cropland: BUILTUP_OR_CROPLAND
+  landing_mobility_slope: LANDING_SLOPE
+  missing_data: MISSING_DATA
+  mars_target_check: MARS_TARGET_CHECK

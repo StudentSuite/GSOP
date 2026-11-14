@@ -141,3 +141,28 @@ def test_confidence_low_only_on_mars_landing_and_power():
 def test_extra_gate_passes():
     gate = _parse_purposes()["moon"]["landing_mobility"].extra_gate
     assert gate.passes(8.0) and not gate.passes(8.01)
+
+
+# --- A09: gates.yaml --------------------------------------------------------
+def test_gates_values_and_reason_codes():
+    sink = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        g = C._parse_gates(read("gates"), C._Warn(sink))
+    assert sink == []
+    t = g.thresholds
+    assert t["water_ice_fraction"] == 0.5
+    assert t["ndvi_median"] == 0.2
+    assert t["builtup_cropland_fraction"] == 0.2
+    assert t["mars_target_check"] == {
+        "mode": "warn", "max_abs_lat_deg": 50, "max_elevation_m": 2000, "min_thermal_inertia": 100,
+    }
+    assert set(g.reason_codes) >= {
+        "water_ice", "vegetation", "builtup_cropland", "landing_mobility_slope", "missing_data", "mars_target_check",
+    }
+    assert len(set(g.reason_codes.values())) == len(g.reason_codes)
+
+
+def test_gate_file_flags_unsourced_thresholds():
+    text = (CONFIG_DIR / "gates.yaml").read_text(encoding="utf-8")
+    assert text.count("TUNABLE, NOT SOURCED") == 3
