@@ -300,12 +300,20 @@ class TemperatureSettings:
 
 
 @dataclass(frozen=True)
+class WaterIndexSettings:
+    aridity_ai_cap: float
+    permafrost_asset: Optional[str]
+    permafrost_outside_domain: str  # "nan" or "zero"
+
+
+@dataclass(frozen=True)
 class Features:
     columns: dict[str, Feature]
     gate_layers: dict[str, dict[str, Any]]
     operators: OperatorSettings
     illumination: IlluminationSettings
     temperature: TemperatureSettings
+    water_index: WaterIndexSettings
 
 
 @dataclass(frozen=True)
@@ -625,7 +633,7 @@ def _parse_ledger(raw: Any, purposes: dict, w: _Warn) -> Ledger:
 def _parse_features(raw: Any, w: _Warn) -> Features:
     f = "features.yaml"
     raw = _map(raw, f)
-    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature"), f)
+    w.unknown(raw, ("features", "gate_layers", "operators", "illumination", "temperature", "water_index"), f)
     ow = f"{f}: operators"
     op = _map(_need(raw, "operators", f), ow)
     w.unknown(op, ("grid_crs", "tile_m", "baseline_m", "slope_method", "max_nan_fraction", "earth_dem"), ow)
@@ -688,6 +696,17 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         _fail(tw, "dry_months must be below 12")
     if temperature.end_year < temperature.start_year:
         _fail(tw, "end_year must not be before start_year")
+    ww = f"{f}: water_index"
+    wi = _map(_need(raw, "water_index", f), ww)
+    w.unknown(wi, ("aridity_ai_cap", "permafrost_asset", "permafrost_outside_domain"), ww)
+    asset = wi.get("permafrost_asset")
+    water_index = WaterIndexSettings(
+        aridity_ai_cap=_num(_need(wi, "aridity_ai_cap", ww), f"{ww}.aridity_ai_cap", lo=0),
+        permafrost_asset=None if asset is None else _str(asset, f"{ww}.permafrost_asset"),
+        permafrost_outside_domain=_choice(_need(wi, "permafrost_outside_domain", ww), ("nan", "zero"), f"{ww}.permafrost_outside_domain"),
+    )
+    if water_index.aridity_ai_cap <= 0:
+        _fail(f"{ww}.aridity_ai_cap", "must be above 0")
     cols: dict[str, Feature] = {}
     known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy", "availability")
     for name, spec in _map(_need(raw, "features", f), f"{f}: features").items():
@@ -740,7 +759,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         spec = _map(spec, where)
         _str(_need(spec, "definition", where), f"{where}.definition")
         layers[name] = dict(spec)
-    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature)
+    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination, temperature=temperature, water_index=water_index)
 
 
 def _parse_run(raw: Any, w: _Warn) -> RunConfig:

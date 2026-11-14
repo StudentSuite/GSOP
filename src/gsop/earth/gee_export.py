@@ -283,3 +283,52 @@ def sum_images(ee: Any, images: list) -> Any:
     for img in images[1:]:
         total = total.add(img)
     return total
+
+
+def water_index_status(cfg: Config) -> tuple[str, str]:
+    """('available' | 'unavailable', reason). ``unavailable`` while no permafrost asset is configured (B04)."""
+    w = cfg.features.water_index
+    if not w.permafrost_asset:
+        return (
+            "unavailable",
+            "no permafrost-probability layer is configured (features.yaml water_index.permafrost_asset is null): "
+            "none exists in the Earth Engine catalog; decision needed from Anay",
+        )
+    return "available", ""
+
+
+def aridity_dryness_image(ee: Any, cfg: Config) -> Any:
+    """Dryness 0..1 (1 = hyperarid) from TerraClimate: ``1 - clip(sum(pr) / sum(pet) / ai_cap, 0, 1)``.
+
+    Annual sums over the climatology years; ``pet`` is scaled by 0.1 (catalog page: mm, scale 0.1) and ``pr`` by
+    ``temperature.precip_scale`` (the page lists no unit or scale for ``pr``: UNVERIFIED).
+    """
+    t = cfg.features.temperature
+    cap = cfg.features.water_index.aridity_ai_cap
+    years = (f"{t.start_year}-01-01", f"{t.end_year + 1}-01-01")
+    tc = ee.ImageCollection(TERRACLIMATE_ID).filterDate(*years)
+    n_years = t.end_year - t.start_year + 1
+    pr = tc.select("pr").sum().multiply(t.precip_scale).divide(n_years)
+    pet = tc.select("pet").sum().multiply(0.1).divide(n_years)
+    ai = pr.divide(pet.updateMask(pet.gt(0)))
+    return ai.divide(cap).clamp(0, 1).multiply(-1).add(1).rename("dryness")
+
+
+def water_index_bands(ee: Any, cfg: Config) -> Any:
+    """Band ``water_index`` (0-1) at 6 km, plus the diagnostic band ``dryness``.
+
+    Raises ``RuntimeError`` while the permafrost layer is unavailable: the orchestration then logs the reason and
+    leaves ``water_index`` out, so the column is NaN and the missing-data gate acts. Nothing is substituted.
+    """
+    status, reason = water_index_status(cfg)
+    if status != "available":
+        raise RuntimeError(f"water_index unavailable: {reason}")
+    w = cfg.features.water_index
+    ops = cfg.features.operators
+    perm = ee.Image(w.permafrost_asset).select(0).rename("permafrost")
+    if w.permafrost_outside_domain == "zero":
+        perm = perm.unmask(0)
+    dry = aridity_dryness_image(ee, cfg)
+    wi = perm.add(dry).divide(2).rename("water_index")
+    cells = int(round(ops.tile_m / 1000.0)) ** 2 + 64
+    return wi.addBands(dry).reduceResolution(reducer=ee.Reducer.mean(), maxPixels=cells)

@@ -15,6 +15,7 @@ illumination:
     moon: {obliquity_deg: 1.54, solar_irradiance_w_m2: 1361.0, source: test, verified_on: null}
     mars: {obliquity_deg: 25.19, solar_irradiance_w_m2: 586.2, source: test, verified_on: "2026-11-14"}
 temperature: {start_year: 2015, end_year: 2024, lst_scale_kelvin: 0.02, min_valid_obs_total: 100, min_valid_obs_per_month: 5, dry_months: 3, dry_season_ratio_max: 0.5, precip_scale: 1.0}
+water_index: {aridity_ai_cap: 1.0, permafrost_asset: null, permafrost_outside_domain: nan}
 features:
   slope_med:
     definition: "median slope at 500 m"

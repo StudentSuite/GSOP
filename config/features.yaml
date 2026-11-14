@@ -67,6 +67,18 @@ temperature:
   dry_season_ratio_max: 0.5   # TUNABLE, NOT SOURCED
   precip_scale: 1.0           # multiplier to turn TerraClimate `pr` into mm. The catalog page lists no unit/scale: UNVERIFIED
 
+# Earth water_index = mean(permafrost probability, dryness 0-1). See docs/SPEC.md and the B04 verdicts in docs/PROVENANCE.md.
+water_index:
+  aridity_ai_cap: 1.0         # TUNABLE, NOT SOURCED: aridity index P/PET at or above this counts as fully humid (dryness 0)
+  # No permafrost layer is in the Earth Engine catalog (B04). Give the id of an Earth Engine asset holding a
+  # 0-1 permafrost-probability raster (for example an upload of the Northern-Hemisphere map) to build water_index.
+  # While this is null, water_index is UNAVAILABLE everywhere and the missing-data gate rejects every tile for
+  # any target whose weights use it. DECISION NEEDED from Anay (docs/UNVERIFIED.md).
+  permafrost_asset: null
+  # What to do where the permafrost raster has no value: `nan` (water_index missing, honest, rejects the tile)
+  # or `zero` (treat as no permafrost; lets the Southern Hemisphere and non-permafrost land be scored).
+  permafrost_outside_domain: nan
+
 features:
   slope_med:
     definition: "Median over the 6 km tile of slope computed at one shared 500 m baseline"
