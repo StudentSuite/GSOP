@@ -281,6 +281,7 @@ class RunConfig:
     golden_tiles: int
     golden_runs: int
     operator_check_tolerance: float
+    ee_project: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -633,13 +634,18 @@ def _parse_run(raw: Any, w: _Warn) -> RunConfig:
     allowed = (
         "runs", "master_seed", "top_fractions", "robust", "candidate_fraction", "chunk_ram_fraction",
         "site_match_radius_km", "novelty_radius_km", "convergence_checkpoints", "golden",
-        "operator_check_tolerance",
+        "operator_check_tolerance", "earth_engine",
     )
     w.unknown(raw, allowed, f)
     robust = _map(_need(raw, "robust", f), f"{f}: robust")
     golden = _map(_need(raw, "golden", f), f"{f}: golden")
     fr = _list(_need(raw, "top_fractions", f), f"{f}: top_fractions", non_empty=True)
     cp = _list(_need(raw, "convergence_checkpoints", f), f"{f}: convergence_checkpoints", non_empty=True)
+    ee_block = _map(raw.get("earth_engine") or {}, f"{f}: earth_engine")
+    w.unknown(ee_block, ("project",), f"{f}: earth_engine")
+    ee_project = ee_block.get("project")
+    if ee_project is not None:
+        ee_project = _str(ee_project, f"{f}: earth_engine.project")
     runs = _int(_need(raw, "runs", f), f"{f}: runs", lo=1)
     checkpoints = tuple(_int(c, f"{f}: convergence_checkpoints[{i}]", lo=1) for i, c in enumerate(cp))
     if list(checkpoints) != sorted(set(checkpoints)):
@@ -660,6 +666,7 @@ def _parse_run(raw: Any, w: _Warn) -> RunConfig:
         golden_tiles=_int(_need(golden, "tiles", f"{f}: golden"), f"{f}: golden.tiles", lo=1),
         golden_runs=_int(_need(golden, "runs", f"{f}: golden"), f"{f}: golden.runs", lo=1),
         operator_check_tolerance=_num(_need(raw, "operator_check_tolerance", f), f"{f}: operator_check_tolerance", lo=0),
+        ee_project=ee_project,
     )
 
 

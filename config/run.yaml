@@ -28,3 +28,8 @@ golden:                                 # gsop golden: tolerance comparison, nev
   tiles: 5000
   runs: 50
 operator_check_tolerance: 0.10          # gsop check-operators: Earth Engine vs numpy may differ by at most 10%
+
+# Google Cloud project registered for Earth Engine. Leave empty in the repo; set the environment
+# variable GSOP_EE_PROJECT instead (it wins over this value). Never commit a project ID.
+earth_engine:
+  project: null

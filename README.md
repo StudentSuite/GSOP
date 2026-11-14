@@ -27,3 +27,15 @@ uv run pytest -q --runslow    # also run tests marked @pytest.mark.slow
 ```
 
 Mark a long-running test with `@pytest.mark.slow`; it is skipped unless you pass `--runslow`. Shared fixtures (`cfg`, `synth_grid_moon`, `synth_grid_mars`, `results_dir`, `small_seed`, `seed_sequences`) live in `tests/conftest.py`.
+
+## Earth Engine login
+
+Earth features are built in Google Earth Engine on **one** machine. The owner of that Earth Engine account logs in once:
+
+```
+uv run earthengine authenticate
+export GSOP_EE_PROJECT=<your-cloud-project-id>      # Windows: setx GSOP_EE_PROJECT <your-cloud-project-id>
+uv run gsop doctor                                  # must print: earthengine: authenticated
+```
+
+The project ID is read from `GSOP_EE_PROJECT` (or `earth_engine.project` in `config/run.yaml`, left empty). Never commit a project ID or credentials. `src/gsop/earth/gee_auth.py` prints these steps and exits if the login is missing; it never prompts.

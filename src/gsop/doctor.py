@@ -76,24 +76,24 @@ def chunk_cells(free_ram_bytes: int, n_columns: int, fraction: float) -> int:
 
 
 def earth_engine_status() -> dict[str, Any]:
-    """Try ``ee.Initialize`` once. Never prompts, never raises."""
+    """Try ``ee.Initialize`` once. Never prompts, never raises. Does not print the project ID."""
+    from gsop.earth.gee_auth import check_ee, ee_project  # noqa: PLC0415
+
+    project = ee_project()
     try:
         import ee  # noqa: PLC0415
 
         version = getattr(ee, "__version__", None)
     except Exception as exc:  # noqa: BLE001
-        return {"installed": False, "authenticated": False, "detail": repr(exc)}
-    try:
-        ee.Initialize()
-    except Exception as exc:  # noqa: BLE001
-        first_line = (str(exc).strip().splitlines() or [type(exc).__name__])[0]
-        return {
-            "installed": True,
-            "version": version,
-            "authenticated": False,
-            "detail": f"{type(exc).__name__}: {first_line}",
-        }
-    return {"installed": True, "version": version, "authenticated": True, "detail": ""}
+        return {"installed": False, "authenticated": False, "project_configured": bool(project), "detail": repr(exc)}
+    ok, reason = check_ee(project)
+    return {
+        "installed": True,
+        "version": version,
+        "authenticated": ok,
+        "project_configured": bool(project),
+        "detail": reason,
+    }
 
 
 def package_versions() -> dict[str, str]:
@@ -141,7 +141,7 @@ def render(info: dict[str, Any]) -> str:
     elif ee["authenticated"]:
         ee_line = "authenticated"
     else:
-        ee_line = f"NOT authenticated ({ee['detail']})"
+        ee_line = f"NOT authenticated ({ee['detail']}); see README, section Earth Engine login"
     chunk = info["chunk"]
     lines = [
         f"OS:            {info['os']} ({info['machine']})",
@@ -149,7 +149,8 @@ def render(info: dict[str, Any]) -> str:
         f"Cores:         {info['cores_physical']} physical, {info['cores_logical']} logical",
         f"RAM:           {info['ram_total_gb']} GB total, {info['ram_free_gb']} GB free",
         f"Disk free:     {info['disk_free_gb']} GB",
-        f"Earth Engine:  {ee_line}",
+        f"earthengine:   {ee_line}",
+        f"EE project:    {'configured' if ee.get('project_configured') else 'not set (GSOP_EE_PROJECT)'}",
         "Packages:",
     ]
     lines += [f"  {name:<18} {ver}" for name, ver in info["packages"].items()]
