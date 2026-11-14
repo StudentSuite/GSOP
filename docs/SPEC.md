@@ -28,7 +28,18 @@ TODO (phase B). Fixed by decision D1: 6 km x 6 km tiles on the equal-area grid E
 
 ## Features (s2)
 
-TODO (phases B and C). Columns, sources and uncertainty floors are in `config/features.yaml`. `water_index` and `silica_index` are cross-instrument proxies and are the two weakest comparisons in the index.
+Columns, sources and uncertainty floors are in `config/features.yaml`. `water_index` and `silica_index` are cross-instrument proxies and are the two weakest comparisons in the index. Other feature definitions are added below by the issue that builds each one.
+
+### Illumination: `sun_max_elev`, `sun_low_share`, `insol_annual` (issue B08)
+
+One analytic numpy implementation (`src/gsop/illumination.py`) for Earth, Moon and Mars. Per-body inputs are the obliquity and solar irradiance in `config/features.yaml` (block `illumination`, each with a source; the Moon obliquity 1.54 degrees is not on the NASA fact sheet and is marked unverified). Over a year the Sun's declination `d` satisfies `sin d = sin(eps) sin(L)`; at latitude `phi` and hour angle `h`, `sin e = sin(phi) sin(d) + cos(phi) cos(d) cos(h)`.
+
+- `sun_max_elev` (degrees) = `90 - max(|phi| - eps, 0)`, exact.
+- `sun_low_share` (0-1) = share of all daylight (`e > 0`) over the year with `e` below 5 degrees, integrated analytically per day over 360 values of `L`.
+- `insol_annual` (W/m2) = annual mean flux on the ground `S0 max(0, cos theta)`; flat ground uses the closed-form daily mean, a given slope and aspect use numeric quadrature (72 days x 96 hour angles).
+- Earth tiles use flat ground (the tile table has no aspect). Moon and Mars target values come from the published Glaser 2018 numbers (issue B27), not from this code.
+
+**What it cannot capture:** (1) **terrain shadowing**: an unobstructed flat horizon is assumed, but at the lunar poles neighbouring ridges and crater rims decide what is lit, so these three numbers say nothing about that (the `illumination_match` output and the fidelity score carry the consequence: Earth cannot match polar lighting); (2) orbital eccentricity: `L` is sampled uniformly, equal to uniform in time only for a circular orbit (worst for Mars, eccentricity about 0.09); (3) atmosphere: top-of-atmosphere geometry only.
 
 ## Operators (s2)
 

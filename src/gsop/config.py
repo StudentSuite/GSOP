@@ -271,10 +271,28 @@ class OperatorSettings:
 
 
 @dataclass(frozen=True)
+class BodyConstants:
+    obliquity_deg: float
+    solar_irradiance_w_m2: float
+    source: str
+    verified_on: Optional[str]
+
+
+@dataclass(frozen=True)
+class IlluminationSettings:
+    low_sun_deg: float
+    days_per_year: int
+    tilted_days: int
+    hour_samples: int
+    bodies: dict[str, BodyConstants]
+
+
+@dataclass(frozen=True)
 class Features:
     columns: dict[str, Feature]
     gate_layers: dict[str, dict[str, Any]]
     operators: OperatorSettings
+    illumination: IlluminationSettings
 
 
 @dataclass(frozen=True)
@@ -594,7 +612,7 @@ def _parse_ledger(raw: Any, purposes: dict, w: _Warn) -> Ledger:
 def _parse_features(raw: Any, w: _Warn) -> Features:
     f = "features.yaml"
     raw = _map(raw, f)
-    w.unknown(raw, ("features", "gate_layers", "operators"), f)
+    w.unknown(raw, ("features", "gate_layers", "operators", "illumination"), f)
     ow = f"{f}: operators"
     op = _map(_need(raw, "operators", f), ow)
     w.unknown(op, ("grid_crs", "tile_m", "baseline_m", "slope_method", "max_nan_fraction", "earth_dem"), ow)
@@ -617,6 +635,29 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
     )
     if abs(operators.tile_m / operators.baseline_m - round(operators.tile_m / operators.baseline_m)) > 1e-9:
         _fail(ow, f"tile_m {operators.tile_m} must be a whole multiple of baseline_m {operators.baseline_m}")
+    iw = f"{f}: illumination"
+    il = _map(_need(raw, "illumination", f), iw)
+    w.unknown(il, ("low_sun_deg", "days_per_year", "tilted_days", "hour_samples", "bodies"), iw)
+    bodies_raw = _map(_need(il, "bodies", iw), f"{iw}.bodies")
+    consts: dict[str, BodyConstants] = {}
+    for body in ("earth", "moon", "mars"):
+        bw = f"{iw}.bodies.{body}"
+        b = _map(_need(bodies_raw, body, f"{iw}.bodies"), bw)
+        w.unknown(b, ("obliquity_deg", "solar_irradiance_w_m2", "source", "verified_on"), bw)
+        verified = b.get("verified_on")
+        consts[body] = BodyConstants(
+            obliquity_deg=_num(_need(b, "obliquity_deg", bw), f"{bw}.obliquity_deg", lo=0, hi=90),
+            solar_irradiance_w_m2=_num(_need(b, "solar_irradiance_w_m2", bw), f"{bw}.solar_irradiance_w_m2", lo=0),
+            source=_str(_need(b, "source", bw), f"{bw}.source"),
+            verified_on=None if verified is None else _str(verified, f"{bw}.verified_on"),
+        )
+    illumination = IlluminationSettings(
+        low_sun_deg=_num(_need(il, "low_sun_deg", iw), f"{iw}.low_sun_deg", lo=0, hi=90),
+        days_per_year=_int(_need(il, "days_per_year", iw), f"{iw}.days_per_year", lo=4),
+        tilted_days=_int(_need(il, "tilted_days", iw), f"{iw}.tilted_days", lo=4),
+        hour_samples=_int(_need(il, "hour_samples", iw), f"{iw}.hour_samples", lo=8),
+        bodies=consts,
+    )
     cols: dict[str, Feature] = {}
     known = ("definition", "units", "sources", "evidence_grade", "uncertainty", "proxy", "availability")
     for name, spec in _map(_need(raw, "features", f), f"{f}: features").items():
@@ -669,7 +710,7 @@ def _parse_features(raw: Any, w: _Warn) -> Features:
         spec = _map(spec, where)
         _str(_need(spec, "definition", where), f"{where}.definition")
         layers[name] = dict(spec)
-    return Features(columns=cols, gate_layers=layers, operators=operators)
+    return Features(columns=cols, gate_layers=layers, operators=operators, illumination=illumination)
 
 
 def _parse_run(raw: Any, w: _Warn) -> RunConfig:

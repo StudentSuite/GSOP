@@ -30,6 +30,29 @@ operators:
     # 60N"; south of 56S has no SRTM, so Copernicus is used there too (documented deviation, see SPEC).
     nasadem_lat_range: [-56, 60]
 
+# Illumination settings and body constants for src/gsop/illumination.py (one analytic implementation for all bodies).
+illumination:
+  low_sun_deg: 5              # "share of daylight with the Sun under 5 deg" (setup prompt, features.yaml notes)
+  days_per_year: 360          # TUNABLE: samples of the Sun's ecliptic longitude per year (analytic day integrals)
+  tilted_days: 72             # TUNABLE: days sampled when a slope and aspect are given (numeric hour-angle quadrature)
+  hour_samples: 96            # TUNABLE: hour angles per day for the tilted quadrature
+  bodies:
+    earth:
+      obliquity_deg: 23.44
+      solar_irradiance_w_m2: 1361.0
+      source: "NASA Earth Fact Sheet (nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html): obliquity to orbit 23.44, solar irradiance 1361.0"
+      verified_on: "2026-11-14"
+    moon:
+      obliquity_deg: 1.54     # Sun's declination range as seen from the Moon: tilt of the lunar equator to the ecliptic
+      solar_irradiance_w_m2: 1361.0
+      source: "irradiance: NASA Moon Fact Sheet (moonfact.html) 1361.0. obliquity: NOT on that sheet (it lists 6.68 to the orbit plane, which is not the Sun-relevant tilt). 1.54 is from general knowledge, consistent with the setup prompt's 'Sun within about 1.5 deg of the horizon'. UNVERIFIED."
+      verified_on: null
+    mars:
+      obliquity_deg: 25.19
+      solar_irradiance_w_m2: 586.2
+      source: "NASA Mars Fact Sheet (nssdc.gsfc.nasa.gov/planetary/factsheet/marsfact.html): obliquity to orbit 25.19, solar irradiance 586.2 (the page does not say at which distance)"
+      verified_on: "2026-11-14"
+
 features:
   slope_med:
     definition: "Median over the 6 km tile of slope computed at one shared 500 m baseline"
@@ -126,7 +149,7 @@ features:
 
   insol_annual:
     definition: "Annual insolation computed from latitude, obliquity and slope/aspect (Mars sunlight family)"
-    units: "TODO unit not fixed in the setup prompt (W/m2 expected)"
+    units: "W/m2, annual mean on a flat surface (unit set in issue B08)"
     sources:
       earth: {name: "computed from latitude, obliquity, slope/aspect"}
       moon: null

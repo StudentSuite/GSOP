@@ -5,6 +5,15 @@ operators:
   slope_method: horn
   max_nan_fraction: 0.2
   earth_dem: {nasadem_lat_range: [-56, 60]}
+illumination:
+  low_sun_deg: 5
+  days_per_year: 360
+  tilted_days: 72
+  hour_samples: 96
+  bodies:
+    earth: {obliquity_deg: 23.44, solar_irradiance_w_m2: 1361.0, source: test, verified_on: "2026-11-14"}
+    moon: {obliquity_deg: 1.54, solar_irradiance_w_m2: 1361.0, source: test, verified_on: null}
+    mars: {obliquity_deg: 25.19, solar_irradiance_w_m2: 586.2, source: test, verified_on: "2026-11-14"}
 features:
   slope_med:
     definition: "median slope at 500 m"
